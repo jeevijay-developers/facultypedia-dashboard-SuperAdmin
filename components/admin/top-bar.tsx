@@ -1,8 +1,20 @@
 "use client"
 
-import { Search, Bell, Settings } from "lucide-react"
+import { useCallback } from "react"
+import { useRouter } from "next/navigation"
+import { Search, Bell, Settings, LogOut } from "lucide-react"
+import { Button } from "@/components/ui/button"
 
 export function TopBar() {
+  const router = useRouter()
+
+  const handleLogout = useCallback(() => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("super-admin-token")
+    }
+    router.replace("/login")
+  }, [router])
+
   return (
     <header className="h-16 bg-white border-b border-gray-200 px-8 flex items-center justify-between">
       <div className="flex-1 max-w-md">
@@ -23,7 +35,19 @@ export function TopBar() {
         <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
           <Settings className="w-5 h-5 text-gray-600" />
         </button>
-        <div className="w-10 h-10 rounded-full bg-gray-300" />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={handleLogout}
+          className="gap-2"
+        >
+          <LogOut className="h-4 w-4" />
+          <span className="hidden sm:inline">Logout</span>
+        </Button>
+        <div className="hidden h-10 w-10 items-center justify-center rounded-full bg-gray-300 font-semibold text-gray-600 sm:flex">
+          SA
+        </div>
       </div>
     </header>
   )

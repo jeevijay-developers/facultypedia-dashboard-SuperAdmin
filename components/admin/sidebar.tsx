@@ -1,8 +1,19 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname } from "next/navigation"
-import { LayoutDashboard, Users, BookOpen, TestTube, Zap, Video, BarChart3, Settings } from "lucide-react"
+import { usePathname, useRouter } from "next/navigation"
+import {
+  LayoutDashboard,
+  Users,
+  BookOpen,
+  TestTube,
+  Zap,
+  Video,
+  BarChart3,
+  Settings,
+  LogOut,
+} from "lucide-react"
+import { Button } from "@/components/ui/button"
 
 const navItems = [
   { href: "/admin", icon: LayoutDashboard, label: "Dashboard" },
@@ -19,6 +30,14 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname()
+  const router = useRouter()
+
+  const handleLogout = () => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("super-admin-token")
+    }
+    router.replace("/login")
+  }
 
   return (
     <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
@@ -57,11 +76,23 @@ export function Sidebar() {
       </nav>
 
       <div className="p-4 border-t border-gray-200">
-        <div className="px-4 py-3 rounded-lg" style={{ backgroundColor: "#F5F0FA" }}>
-          <p className="text-xs font-medium" style={{ color: "#2E073F" }}>
-            Need help?
-          </p>
-          <p className="text-xs text-gray-600 mt-1">Contact support for assistance</p>
+        <div className="space-y-3">
+          <div className="px-4 py-3 rounded-lg" style={{ backgroundColor: "#F5F0FA" }}>
+            <p className="text-xs font-medium" style={{ color: "#2E073F" }}>
+              Need help?
+            </p>
+            <p className="text-xs text-gray-600 mt-1">Contact support for assistance</p>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full gap-2 border-gray-300 text-gray-700 hover:border-gray-400 hover:text-gray-900"
+            onClick={handleLogout}
+          >
+            <LogOut className="h-4 w-4" />
+            Logout
+          </Button>
         </div>
       </div>
     </aside>

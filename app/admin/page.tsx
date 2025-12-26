@@ -105,7 +105,7 @@ export default function DashboardPage() {
 
       if (status === 401) {
         adminAPI.auth.clearSession();
-        router.replace("/admin/login");
+        router.replace("/login");
       } else {
         const message =
           err instanceof Error ? err.message : "Failed to load analytics";
@@ -133,7 +133,7 @@ export default function DashboardPage() {
 
       if (status === 401) {
         adminAPI.auth.clearSession();
-        router.replace("/admin/login");
+        router.replace("/login");
       } else {
         const message =
           err instanceof Error ? err.message : "Failed to load transactions";

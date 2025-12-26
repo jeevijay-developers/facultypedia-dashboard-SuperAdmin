@@ -16,9 +16,15 @@ interface DataTableProps<T> {
   data: T[]
   columns: Column<T>[]
   onRowClick?: (row: T) => void
+  isLoading?: boolean
 }
 
-export function DataTable<T extends { id: string | number }>({ data, columns, onRowClick }: DataTableProps<T>) {
+export function DataTable<T extends { id: string | number }>({
+  data,
+  columns,
+  onRowClick,
+  isLoading = false,
+}: DataTableProps<T>) {
   const [sortConfig, setSortConfig] = useState<{
     key: keyof T
     direction: "asc" | "desc"
@@ -41,12 +47,14 @@ export function DataTable<T extends { id: string | number }>({ data, columns, on
             {columns.map((col) => (
               <th key={String(col.key)} className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
                 <button
-                  onClick={() =>
+                  type="button"
+                  onClick={() => {
+                    if (!col.sortable) return
                     setSortConfig({
                       key: col.key,
                       direction: sortConfig?.key === col.key && sortConfig.direction === "asc" ? "desc" : "asc",
                     })
-                  }
+                  }}
                   className="flex items-center gap-2 hover:opacity-70"
                   disabled={!col.sortable}
                 >
@@ -64,19 +72,33 @@ export function DataTable<T extends { id: string | number }>({ data, columns, on
           </tr>
         </thead>
         <tbody>
-          {sortedData.map((row, idx) => (
-            <tr
-              key={row.id}
-              className="border-b border-gray-200 hover:bg-gray-50 transition-colors cursor-pointer"
-              onClick={() => onRowClick?.(row)}
-            >
-              {columns.map((col) => (
-                <td key={String(col.key)} className="px-6 py-4 text-sm text-gray-900">
-                  {col.render ? col.render(row[col.key], row) : String(row[col.key])}
-                </td>
-              ))}
+          {isLoading ? (
+            <tr>
+              <td className="px-6 py-4 text-sm text-gray-600" colSpan={columns.length}>
+                Loading...
+              </td>
             </tr>
-          ))}
+          ) : sortedData.length === 0 ? (
+            <tr>
+              <td className="px-6 py-4 text-sm text-gray-600" colSpan={columns.length}>
+                No records found
+              </td>
+            </tr>
+          ) : (
+            sortedData.map((row) => (
+              <tr
+                key={row.id}
+                className="border-b border-gray-200 hover:bg-gray-50 transition-colors cursor-pointer"
+                onClick={() => onRowClick?.(row)}
+              >
+                {columns.map((col) => (
+                  <td key={String(col.key)} className="px-6 py-4 text-sm text-gray-900">
+                    {col.render ? col.render(row[col.key], row) : String(row[col.key])}
+                  </td>
+                ))}
+              </tr>
+            ))
+          )}
         </tbody>
       </table>
     </div>

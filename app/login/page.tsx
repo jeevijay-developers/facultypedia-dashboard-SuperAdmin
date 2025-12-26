@@ -59,7 +59,7 @@ export default function SuperAdminLoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 px-4 py-12">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-linear-to-br from-slate-900 via-slate-800 to-slate-900 px-4 py-12">
       <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
         <div className="flex flex-col items-center gap-3 border-b border-slate-100 bg-slate-50 px-8 py-6 text-center">
           <div className="relative h-12 w-12">

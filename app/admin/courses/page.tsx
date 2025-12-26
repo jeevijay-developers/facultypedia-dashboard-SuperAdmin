@@ -16,7 +16,6 @@ type TableCourse = {
   fees: number
   status: string
 }
-
 type PaginationMeta = {
   currentPage: number
   totalPages: number

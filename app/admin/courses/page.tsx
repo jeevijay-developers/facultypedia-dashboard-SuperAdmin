@@ -1,160 +1,183 @@
-"use client"
+"use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react"
-import { DataTable } from "@/components/admin/data-table"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { MoreHorizontal, RefreshCw } from "lucide-react"
-import adminAPI from "@/util/server"
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { DataTable } from "@/components/admin/data-table";
+import { Pagination } from "@/components/admin/pagination";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { MoreHorizontal, RefreshCw } from "lucide-react";
+import adminAPI from "@/util/server";
 
 type TableCourse = {
-  id: string
-  title: string
-  educatorName: string
-  subject: string
-  enrolled: number
-  fees: number
-  status: string
-}
+  id: string;
+  title: string;
+  educatorName: string;
+  subject: string;
+  enrolled: number;
+  fees: number;
+  status: string;
+};
 
 type PaginationMeta = {
-  currentPage: number
-  totalPages: number
-  totalCourses: number
-  hasNextPage?: boolean
-  hasPrevPage?: boolean
-}
+  currentPage: number;
+  totalPages: number;
+  totalCourses: number;
+  hasNextPage?: boolean;
+  hasPrevPage?: boolean;
+};
 
 export default function CoursesPage() {
-  const [courses, setCourses] = useState<TableCourse[]>([])
-  const [pagination, setPagination] = useState<PaginationMeta | null>(null)
-  const [searchInput, setSearchInput] = useState("")
-  const [debouncedSearch, setDebouncedSearch] = useState("")
-  const [showFilters, setShowFilters] = useState(false)
-  const [subjectFilter, setSubjectFilter] = useState<string>("")
-  const [minFeeFilter, setMinFeeFilter] = useState<string>("")
-  const [minEnrolledFilter, setMinEnrolledFilter] = useState<string>("")
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [courses, setCourses] = useState<TableCourse[]>([]);
+  const [pagination, setPagination] = useState<PaginationMeta | null>(null);
+  const [page, setPage] = useState(1);
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
+  const [subjectFilter, setSubjectFilter] = useState<string>("");
+  const [minFeeFilter, setMinFeeFilter] = useState<string>("");
+  const [minEnrolledFilter, setMinEnrolledFilter] = useState<string>("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const PAGE_SIZE = 10;
 
   const normalizeCourse = useCallback((course: any): TableCourse | null => {
-    const id = course?.id ?? course?._id
+    const id = course?.id ?? course?._id;
     if (!id) {
-      return null
+      return null;
     }
 
     const subjectList = Array.isArray(course?.subject)
       ? course.subject.filter(Boolean)
       : course?.subject
-        ? [course.subject]
-        : []
+      ? [course.subject]
+      : [];
 
-    const subject = subjectList.length ? subjectList.join(", ") : "—"
+    const subject = subjectList.length ? subjectList.join(", ") : "—";
 
     const enrolledCount = Number.isFinite(Number(course?.enrolled))
       ? Number(course.enrolled)
       : Array.isArray(course?.enrolledStudents)
-        ? course.enrolledStudents.length
-        : 0
+      ? course.enrolledStudents.length
+      : 0;
 
-    const feesValue = Number.isFinite(Number(course?.fees)) ? Number(course.fees) : 0
+    const feesValue = Number.isFinite(Number(course?.fees))
+      ? Number(course.fees)
+      : 0;
 
     const status = course?.status
       ? course.status
       : course?.isActive === false
-        ? "inactive"
-        : "active"
+      ? "inactive"
+      : "active";
 
     return {
       id: String(id),
       title: course?.title || "Untitled course",
-      educatorName: course?.educatorName || course?.educator || course?.educatorID?.fullName || "Unknown",
+      educatorName:
+        course?.educatorName ||
+        course?.educator ||
+        course?.educatorID?.fullName ||
+        "Unknown",
       subject,
       enrolled: enrolledCount,
       fees: feesValue,
       status,
-    }
-  }, [])
+    };
+  }, []);
 
-  const loadCourses = useCallback(async () => {
-    setIsLoading(true)
-    setError(null)
+  const loadCourses = useCallback(
+    async (targetPage = page) => {
+      setIsLoading(true);
+      setError(null);
 
-    try {
-      const response = await adminAPI.courses.list({ limit: 100 })
-      const rawCourses = response?.courses ?? response ?? []
-      const mapped = Array.isArray(rawCourses)
-        ? rawCourses
-            .map(normalizeCourse)
-            .filter((item): item is TableCourse => Boolean(item))
-        : []
+      try {
+        const response = await adminAPI.courses.list({
+          page: targetPage,
+          limit: PAGE_SIZE,
+        });
+        const rawCourses = response?.courses ?? response ?? [];
+        const mapped = Array.isArray(rawCourses)
+          ? rawCourses
+              .map(normalizeCourse)
+              .filter((item): item is TableCourse => Boolean(item))
+          : [];
 
-      setCourses(mapped)
-      setPagination(response?.pagination ?? null)
-    } catch (err) {
-      const status = (err as { status?: number })?.status
+        setCourses(mapped);
+        setPagination(response?.pagination ?? null);
+      } catch (err) {
+        const status = (err as { status?: number })?.status;
 
-      if (status === 401) {
-        adminAPI.auth.clearSession()
-        setError(
-          "Automatic super-admin authentication failed. Confirm the configured credentials match your backend or run the super admin seeder.",
-        )
-        return
+        if (status === 401) {
+          adminAPI.auth.clearSession();
+          setError(
+            "Automatic super-admin authentication failed. Confirm the configured credentials match your backend or run the super admin seeder."
+          );
+          return;
+        }
+
+        const message =
+          err instanceof Error ? err.message : "Failed to load courses";
+        setError(message);
+      } finally {
+        setIsLoading(false);
       }
-
-      const message = err instanceof Error ? err.message : "Failed to load courses"
-      setError(message)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [normalizeCourse])
+    },
+    [normalizeCourse, page, PAGE_SIZE]
+  );
 
   useEffect(() => {
-    void loadCourses()
-  }, [loadCourses])
+    void loadCourses(page);
+  }, [loadCourses, page]);
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(searchInput), 300)
-    return () => clearTimeout(timer)
-  }, [searchInput])
+    const timer = setTimeout(() => setDebouncedSearch(searchInput), 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   const subjectOptions = useMemo(() => {
-    const unique = new Set<string>()
+    const unique = new Set<string>();
     courses.forEach((course) => {
       course.subject
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean)
-        .forEach((s) => unique.add(s))
-    })
-    return Array.from(unique)
-  }, [courses])
+        .forEach((s) => unique.add(s));
+    });
+    return Array.from(unique);
+  }, [courses]);
 
   const filteredCourses = useMemo(() => {
-    const query = debouncedSearch.trim().toLowerCase()
-    const minFee = minFeeFilter ? Number(minFeeFilter) : null
-    const minEnrolled = minEnrolledFilter ? Number(minEnrolledFilter) : null
+    const query = debouncedSearch.trim().toLowerCase();
+    const minFee = minFeeFilter ? Number(minFeeFilter) : null;
+    const minEnrolled = minEnrolledFilter ? Number(minEnrolledFilter) : null;
 
     return courses.filter((course) => {
       const matchesSearch = query
         ? [course.title, course.educatorName, course.subject]
             .filter(Boolean)
             .some((value) => value.toLowerCase().includes(query))
-        : true
+        : true;
 
       const matchesSubject = subjectFilter
         ? course.subject
             .split(",")
             .map((s) => s.trim().toLowerCase())
             .includes(subjectFilter.toLowerCase())
-        : true
+        : true;
 
-      const matchesFee = minFee !== null ? course.fees >= minFee : true
-      const matchesEnrolled = minEnrolled !== null ? course.enrolled >= minEnrolled : true
+      const matchesFee = minFee !== null ? course.fees >= minFee : true;
+      const matchesEnrolled =
+        minEnrolled !== null ? course.enrolled >= minEnrolled : true;
 
-      return matchesSearch && matchesSubject && matchesFee && matchesEnrolled
-    })
-  }, [courses, debouncedSearch, subjectFilter, minFeeFilter, minEnrolledFilter])
+      return matchesSearch && matchesSubject && matchesFee && matchesEnrolled;
+    });
+  }, [
+    courses,
+    debouncedSearch,
+    subjectFilter,
+    minFeeFilter,
+    minEnrolledFilter,
+  ]);
 
   const columns = [
     { key: "title" as const, label: "Title", sortable: true },
@@ -165,7 +188,8 @@ export default function CoursesPage() {
       key: "fees" as const,
       label: "Fees",
       sortable: true,
-      render: (value: number) => `₹${Number(value || 0).toLocaleString("en-IN")}`,
+      render: (value: number) =>
+        `₹${Number(value || 0).toLocaleString("en-IN")}`,
     },
     {
       key: "status" as const,
@@ -173,7 +197,9 @@ export default function CoursesPage() {
       render: (status: string) => (
         <span
           className={`px-3 py-1 rounded-full text-xs font-medium ${
-            status === "active" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+            status === "active"
+              ? "bg-green-100 text-green-800"
+              : "bg-red-100 text-red-800"
           }`}
         >
           {status}
@@ -185,13 +211,20 @@ export default function CoursesPage() {
       label: "Actions",
       render: () => (
         <div className="flex justify-end">
-          <button className="p-1 hover:bg-gray-100 rounded" aria-label="Actions">
+          <button
+            className="p-1 hover:bg-gray-100 rounded"
+            aria-label="Actions"
+          >
             <MoreHorizontal className="w-4 h-4 text-gray-600" />
           </button>
         </div>
       ),
     },
-  ] as const
+  ] as const;
+
+  const handlePageChange = (nextPage: number) => {
+    setPage(nextPage);
+  };
 
   return (
     <div className="p-8">
@@ -199,7 +232,9 @@ export default function CoursesPage() {
         <h1 className="text-3xl font-bold" style={{ color: "#2E073F" }}>
           Courses Management
         </h1>
-        <p className="text-gray-600 mt-1">Manage all courses available on the platform</p>
+        <p className="text-gray-600 mt-1">
+          Manage all courses available on the platform
+        </p>
       </div>
 
       <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
@@ -252,7 +287,9 @@ export default function CoursesPage() {
                   </select>
                 </div>
                 <div>
-                  <p className="text-xs font-semibold text-gray-600">Min Enrolled</p>
+                  <p className="text-xs font-semibold text-gray-600">
+                    Min Enrolled
+                  </p>
                   <select
                     className="mt-1 w-full rounded-md border border-gray-200 p-2 text-sm"
                     value={minEnrolledFilter}
@@ -270,14 +307,18 @@ export default function CoursesPage() {
                     variant="ghost"
                     size="sm"
                     onClick={() => {
-                      setSubjectFilter("")
-                      setMinFeeFilter("")
-                      setMinEnrolledFilter("")
+                      setSubjectFilter("");
+                      setMinFeeFilter("");
+                      setMinEnrolledFilter("");
                     }}
                   >
                     Clear
                   </Button>
-                  <Button type="button" size="sm" onClick={() => setShowFilters(false)}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => setShowFilters(false)}
+                  >
                     Apply
                   </Button>
                 </div>
@@ -289,11 +330,13 @@ export default function CoursesPage() {
             variant="outline"
             className="flex items-center gap-2"
             onClick={() => {
-              void loadCourses()
+              void loadCourses(page);
             }}
             disabled={isLoading}
           >
-            <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+            <RefreshCw
+              className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
+            />
             Refresh
           </Button>
         </div>
@@ -304,8 +347,19 @@ export default function CoursesPage() {
           {error}
         </div>
       ) : (
-        <DataTable data={filteredCourses} columns={columns} isLoading={isLoading} />
+        <DataTable
+          data={filteredCourses}
+          columns={columns}
+          isLoading={isLoading}
+        />
       )}
+
+      <Pagination
+        currentPage={pagination?.currentPage ?? page}
+        totalPages={pagination?.totalPages ?? 1}
+        onPageChange={handlePageChange}
+        isLoading={isLoading}
+      />
 
       {pagination && (
         <p className="mt-3 text-sm text-gray-500">
@@ -313,5 +367,5 @@ export default function CoursesPage() {
         </p>
       )}
     </div>
-  )
+  );
 }

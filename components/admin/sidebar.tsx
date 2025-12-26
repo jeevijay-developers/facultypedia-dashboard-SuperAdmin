@@ -26,6 +26,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import adminAPI from "@/util/server";
+import Image from "next/image";
 
 const navItems = [
   { href: "/admin", icon: LayoutDashboard, label: "Dashboard" },
@@ -37,7 +38,7 @@ const navItems = [
   { href: "/admin/webinars", icon: Video, label: "Webinars" },
   { href: "/admin/live-classes", icon: Video, label: "Live Classes" },
   { href: "/admin/revenue", icon: BarChart3, label: "Revenue & Payments" },
-  { href: "/admin/settings", icon: Settings, label: "Settings" },
+  // { href: "/admin/settings", icon: Settings, label: "Settings" },
 ];
 
 export function Sidebar() {
@@ -63,13 +64,15 @@ export function Sidebar() {
     <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
       <div className="p-6 border-b border-gray-200">
         <div className="flex items-center gap-2">
-          <div
-            className="w-10 h-10 rounded-lg"
-            style={{ backgroundColor: "#AD49E1" }}
+          <Image
+            src="/icon-dark-32x32.png"
+            alt="Facultypedia Logo"
+            width={40}
+            height={40}
           />
           <div>
             <h1 className="font-bold text-lg" style={{ color: "#2E073F" }}>
-              Facultypedia
+              Faculty Pedia
             </h1>
             <p className="text-xs text-gray-500">Admin Panel</p>
           </div>

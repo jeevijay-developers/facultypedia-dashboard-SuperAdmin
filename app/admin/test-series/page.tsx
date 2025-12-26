@@ -1,150 +1,173 @@
-"use client"
+"use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react"
-import { DataTable } from "@/components/admin/data-table"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { MoreHorizontal, RefreshCw } from "lucide-react"
-import adminAPI from "@/util/server"
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { DataTable } from "@/components/admin/data-table";
+import { Pagination } from "@/components/admin/pagination";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { MoreHorizontal, RefreshCw } from "lucide-react";
+import adminAPI from "@/util/server";
 
 type TableTestSeries = {
-  id: string
-  title: string
-  educatorName: string
-  tests: number
-  price: number
-  validity: string
-  enrolled: number
-  status: string
-}
+  id: string;
+  title: string;
+  educatorName: string;
+  tests: number;
+  price: number;
+  validity: string;
+  enrolled: number;
+  status: string;
+};
 
 type PaginationMeta = {
-  currentPage: number
-  totalPages: number
-  totalTestSeries: number
-  hasNextPage?: boolean
-  hasPrevPage?: boolean
-}
+  currentPage: number;
+  totalPages: number;
+  totalTestSeries: number;
+  hasNextPage?: boolean;
+  hasPrevPage?: boolean;
+};
 
 const formatDate = (value: string | Date | null | undefined) => {
-  if (!value) return "—"
-  const date = value instanceof Date ? value : new Date(value)
-  if (Number.isNaN(date.getTime())) return "—"
-  return date.toLocaleDateString()
-}
+  if (!value) return "—";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString();
+};
 
 export default function TestSeriesPage() {
-  const [series, setSeries] = useState<TableTestSeries[]>([])
-  const [pagination, setPagination] = useState<PaginationMeta | null>(null)
-  const [searchInput, setSearchInput] = useState("")
-  const [debouncedSearch, setDebouncedSearch] = useState("")
-  const [showFilters, setShowFilters] = useState(false)
-  const [minPriceFilter, setMinPriceFilter] = useState<string>("")
-  const [minTestsFilter, setMinTestsFilter] = useState<string>("")
-  const [minEnrolledFilter, setMinEnrolledFilter] = useState<string>("")
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [series, setSeries] = useState<TableTestSeries[]>([]);
+  const [pagination, setPagination] = useState<PaginationMeta | null>(null);
+  const [page, setPage] = useState(1);
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
+  const [minPriceFilter, setMinPriceFilter] = useState<string>("");
+  const [minTestsFilter, setMinTestsFilter] = useState<string>("");
+  const [minEnrolledFilter, setMinEnrolledFilter] = useState<string>("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const PAGE_SIZE = 10;
 
   const normalizeSeries = useCallback((item: any): TableTestSeries | null => {
-    const id = item?.id ?? item?._id
+    const id = item?.id ?? item?._id;
     if (!id) {
-      return null
+      return null;
     }
 
     const testsCount = Number.isFinite(Number(item?.tests))
       ? Number(item.tests)
       : Array.isArray(item?.tests)
-        ? item.tests.length
-        : Number(item?.numberOfTests ?? item?.testCount ?? 0)
+      ? item.tests.length
+      : Number(item?.numberOfTests ?? item?.testCount ?? 0);
 
     const enrolledCount = Number.isFinite(Number(item?.enrolled))
       ? Number(item.enrolled)
       : Array.isArray(item?.enrolledStudents)
-        ? item.enrolledStudents.length
-        : Number(item?.enrolledCount ?? 0)
+      ? item.enrolledStudents.length
+      : Number(item?.enrolledCount ?? 0);
 
-    const priceValue = Number.isFinite(Number(item?.price)) ? Number(item.price) : 0
+    const priceValue = Number.isFinite(Number(item?.price))
+      ? Number(item.price)
+      : 0;
 
     const status = item?.status
       ? item.status
       : item?.isActive === false
-        ? "inactive"
-        : "active"
+      ? "inactive"
+      : "active";
 
     return {
       id: String(id),
       title: item?.title || "Untitled test series",
-      educatorName: item?.educatorName || item?.educator || item?.educatorId?.fullName || "Unknown",
+      educatorName:
+        item?.educatorName ||
+        item?.educator ||
+        item?.educatorId?.fullName ||
+        "Unknown",
       tests: testsCount,
       price: priceValue,
       validity: item?.validity || "",
       enrolled: enrolledCount,
       status,
-    }
-  }, [])
+    };
+  }, []);
 
-  const loadSeries = useCallback(async () => {
-    setIsLoading(true)
-    setError(null)
+  const loadSeries = useCallback(
+    async (targetPage = page) => {
+      setIsLoading(true);
+      setError(null);
 
-    try {
-      const response = await adminAPI.testSeries.list({ limit: 100 })
-      const rawSeries = response?.testSeries ?? response ?? []
-      const mapped = Array.isArray(rawSeries)
-        ? rawSeries
-            .map(normalizeSeries)
-            .filter((item): item is TableTestSeries => Boolean(item))
-        : []
+      try {
+        const response = await adminAPI.testSeries.list({
+          page: targetPage,
+          limit: PAGE_SIZE,
+        });
+        const rawSeries = response?.testSeries ?? response ?? [];
+        const mapped = Array.isArray(rawSeries)
+          ? rawSeries
+              .map(normalizeSeries)
+              .filter((item): item is TableTestSeries => Boolean(item))
+          : [];
 
-      setSeries(mapped)
-      setPagination(response?.pagination ?? null)
-    } catch (err) {
-      const status = (err as { status?: number })?.status
+        setSeries(mapped);
+        setPagination(response?.pagination ?? null);
+      } catch (err) {
+        const status = (err as { status?: number })?.status;
 
-      if (status === 401) {
-        adminAPI.auth.clearSession()
-        setError(
-          "Automatic super-admin authentication failed. Confirm the configured credentials match your backend or run the super admin seeder.",
-        )
-        return
+        if (status === 401) {
+          adminAPI.auth.clearSession();
+          setError(
+            "Automatic super-admin authentication failed. Confirm the configured credentials match your backend or run the super admin seeder."
+          );
+          return;
+        }
+
+        const message =
+          err instanceof Error ? err.message : "Failed to load test series";
+        setError(message);
+      } finally {
+        setIsLoading(false);
       }
-
-      const message = err instanceof Error ? err.message : "Failed to load test series"
-      setError(message)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [normalizeSeries])
+    },
+    [normalizeSeries, page, PAGE_SIZE]
+  );
 
   useEffect(() => {
-    void loadSeries()
-  }, [loadSeries])
+    void loadSeries(page);
+  }, [loadSeries, page]);
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(searchInput), 300)
-    return () => clearTimeout(timer)
-  }, [searchInput])
+    const timer = setTimeout(() => setDebouncedSearch(searchInput), 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   const filteredSeries = useMemo(() => {
-    const query = debouncedSearch.trim().toLowerCase()
-    const minPrice = minPriceFilter ? Number(minPriceFilter) : null
-    const minTests = minTestsFilter ? Number(minTestsFilter) : null
-    const minEnrolled = minEnrolledFilter ? Number(minEnrolledFilter) : null
+    const query = debouncedSearch.trim().toLowerCase();
+    const minPrice = minPriceFilter ? Number(minPriceFilter) : null;
+    const minTests = minTestsFilter ? Number(minTestsFilter) : null;
+    const minEnrolled = minEnrolledFilter ? Number(minEnrolledFilter) : null;
 
     return series.filter((item) => {
       const matchesSearch = query
         ? [item.title, item.educatorName]
             .filter(Boolean)
             .some((value) => value.toLowerCase().includes(query))
-        : true
+        : true;
 
-      const matchesPrice = minPrice !== null ? item.price >= minPrice : true
-      const matchesTests = minTests !== null ? item.tests >= minTests : true
-      const matchesEnrolled = minEnrolled !== null ? item.enrolled >= minEnrolled : true
+      const matchesPrice = minPrice !== null ? item.price >= minPrice : true;
+      const matchesTests = minTests !== null ? item.tests >= minTests : true;
+      const matchesEnrolled =
+        minEnrolled !== null ? item.enrolled >= minEnrolled : true;
 
-      return matchesSearch && matchesPrice && matchesTests && matchesEnrolled
-    })
-  }, [series, debouncedSearch, minPriceFilter, minTestsFilter, minEnrolledFilter])
+      return matchesSearch && matchesPrice && matchesTests && matchesEnrolled;
+    });
+  }, [
+    series,
+    debouncedSearch,
+    minPriceFilter,
+    minTestsFilter,
+    minEnrolledFilter,
+  ]);
 
   const columns = [
     { key: "title" as const, label: "Title", sortable: true },
@@ -169,7 +192,9 @@ export default function TestSeriesPage() {
       render: (status: string) => (
         <span
           className={`px-3 py-1 rounded-full text-xs font-medium ${
-            status === "active" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+            status === "active"
+              ? "bg-green-100 text-green-800"
+              : "bg-red-100 text-red-800"
           }`}
         >
           {status}
@@ -181,13 +206,20 @@ export default function TestSeriesPage() {
       label: "Actions",
       render: () => (
         <div className="flex justify-end">
-          <button className="p-1 hover:bg-gray-100 rounded" aria-label="Actions">
+          <button
+            className="p-1 hover:bg-gray-100 rounded"
+            aria-label="Actions"
+          >
             <MoreHorizontal className="w-4 h-4 text-gray-600" />
           </button>
         </div>
       ),
     },
-  ] as const
+  ] as const;
+
+  const handlePageChange = (nextPage: number) => {
+    setPage(nextPage);
+  };
 
   return (
     <div className="p-8">
@@ -220,7 +252,9 @@ export default function TestSeriesPage() {
             <div className="absolute right-24 top-12 z-20 w-80 rounded-md border border-gray-200 bg-white p-4 shadow-lg">
               <div className="space-y-3">
                 <div>
-                  <p className="text-xs font-semibold text-gray-600">Min Price</p>
+                  <p className="text-xs font-semibold text-gray-600">
+                    Min Price
+                  </p>
                   <select
                     className="mt-1 w-full rounded-md border border-gray-200 p-2 text-sm"
                     value={minPriceFilter}
@@ -233,7 +267,9 @@ export default function TestSeriesPage() {
                   </select>
                 </div>
                 <div>
-                  <p className="text-xs font-semibold text-gray-600">Min Tests</p>
+                  <p className="text-xs font-semibold text-gray-600">
+                    Min Tests
+                  </p>
                   <select
                     className="mt-1 w-full rounded-md border border-gray-200 p-2 text-sm"
                     value={minTestsFilter}
@@ -246,7 +282,9 @@ export default function TestSeriesPage() {
                   </select>
                 </div>
                 <div>
-                  <p className="text-xs font-semibold text-gray-600">Min Enrolled</p>
+                  <p className="text-xs font-semibold text-gray-600">
+                    Min Enrolled
+                  </p>
                   <select
                     className="mt-1 w-full rounded-md border border-gray-200 p-2 text-sm"
                     value={minEnrolledFilter}
@@ -264,14 +302,18 @@ export default function TestSeriesPage() {
                     variant="ghost"
                     size="sm"
                     onClick={() => {
-                      setMinPriceFilter("")
-                      setMinTestsFilter("")
-                      setMinEnrolledFilter("")
+                      setMinPriceFilter("");
+                      setMinTestsFilter("");
+                      setMinEnrolledFilter("");
                     }}
                   >
                     Clear
                   </Button>
-                  <Button type="button" size="sm" onClick={() => setShowFilters(false)}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => setShowFilters(false)}
+                  >
                     Apply
                   </Button>
                 </div>
@@ -283,11 +325,13 @@ export default function TestSeriesPage() {
             variant="outline"
             className="flex items-center gap-2"
             onClick={() => {
-              void loadSeries()
+              void loadSeries(page);
             }}
             disabled={isLoading}
           >
-            <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+            <RefreshCw
+              className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
+            />
             Refresh
           </Button>
         </div>
@@ -298,14 +342,26 @@ export default function TestSeriesPage() {
           {error}
         </div>
       ) : (
-        <DataTable data={filteredSeries} columns={columns} isLoading={isLoading} />
+        <DataTable
+          data={filteredSeries}
+          columns={columns}
+          isLoading={isLoading}
+        />
       )}
+
+      <Pagination
+        currentPage={pagination?.currentPage ?? page}
+        totalPages={pagination?.totalPages ?? 1}
+        onPageChange={handlePageChange}
+        isLoading={isLoading}
+      />
 
       {pagination && (
         <p className="mt-3 text-sm text-gray-500">
-          Showing {filteredSeries.length} of {pagination.totalTestSeries} test series
+          Showing {filteredSeries.length} of {pagination.totalTestSeries} test
+          series
         </p>
       )}
     </div>
-  )
+  );
 }

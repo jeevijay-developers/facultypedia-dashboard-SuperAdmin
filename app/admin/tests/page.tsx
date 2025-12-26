@@ -1,90 +1,93 @@
-"use client"
+"use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react"
-import { DataTable } from "@/components/admin/data-table"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { MoreHorizontal, RefreshCw } from "lucide-react"
-import adminAPI from "@/util/server"
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { DataTable } from "@/components/admin/data-table";
+import { Pagination } from "@/components/admin/pagination";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { MoreHorizontal, RefreshCw } from "lucide-react";
+import adminAPI from "@/util/server";
 
 type TableTest = {
-  id: string
-  title: string
-  subject: string
-  duration: number
-  marks: number
-  questions: number
-  enrolled: number
-  status: string
-}
+  id: string;
+  title: string;
+  subject: string;
+  duration: number;
+  marks: number;
+  questions: number;
+  enrolled: number;
+  status: string;
+};
 
 type PaginationMeta = {
-  currentPage: number
-  totalPages: number
-  totalTests: number
-  hasNextPage?: boolean
-  hasPrevPage?: boolean
-}
+  currentPage: number;
+  totalPages: number;
+  totalTests: number;
+  hasNextPage?: boolean;
+  hasPrevPage?: boolean;
+};
 
 export default function TestsPage() {
-  const [tests, setTests] = useState<TableTest[]>([])
-  const [pagination, setPagination] = useState<PaginationMeta | null>(null)
-  const [searchInput, setSearchInput] = useState("")
-  const [debouncedSearch, setDebouncedSearch] = useState("")
-  const [showFilters, setShowFilters] = useState(false)
-  const [subjectFilter, setSubjectFilter] = useState<string>("")
-  const [minMarksFilter, setMinMarksFilter] = useState<string>("")
-  const [minQuestionsFilter, setMinQuestionsFilter] = useState<string>("")
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [tests, setTests] = useState<TableTest[]>([]);
+  const [pagination, setPagination] = useState<PaginationMeta | null>(null);
+  const [page, setPage] = useState(1);
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
+  const [subjectFilter, setSubjectFilter] = useState<string>("");
+  const [minMarksFilter, setMinMarksFilter] = useState<string>("");
+  const [minQuestionsFilter, setMinQuestionsFilter] = useState<string>("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const PAGE_SIZE = 10;
 
   const normalizeTest = useCallback((test: any): TableTest | null => {
-    const id = test?.id ?? test?._id
+    const id = test?.id ?? test?._id;
     if (!id) {
-      return null
+      return null;
     }
 
     const subjectList = Array.isArray(test?.subject)
       ? test.subject.filter(Boolean)
       : Array.isArray(test?.subjects)
-        ? test.subjects.filter(Boolean)
-        : test?.subject
-          ? [test.subject]
-          : test?.subjects
-            ? [test.subjects]
-            : []
+      ? test.subjects.filter(Boolean)
+      : test?.subject
+      ? [test.subject]
+      : test?.subjects
+      ? [test.subjects]
+      : [];
 
-    const subject = subjectList.length ? subjectList.join(", ") : "—"
+    const subject = subjectList.length ? subjectList.join(", ") : "—";
 
     const durationMinutes = Number.isFinite(Number(test?.duration))
       ? Number(test.duration)
-      : 0
+      : 0;
 
     const marks = Number.isFinite(Number(test?.marks))
       ? Number(test.marks)
       : Number.isFinite(Number(test?.overallMarks))
-        ? Number(test.overallMarks)
-        : 0
+      ? Number(test.overallMarks)
+      : 0;
 
     const questionsCount = Number.isFinite(Number(test?.questions))
       ? Number(test.questions)
       : Array.isArray(test?.questions)
-        ? test.questions.length
-        : 0
+      ? test.questions.length
+      : 0;
 
     const enrolledCount = Number.isFinite(Number(test?.enrolled))
       ? Number(test.enrolled)
       : Array.isArray(test?.enrolledStudents)
-        ? test.enrolledStudents.length
-        : Array.isArray(test?.attempts)
-          ? test.attempts.length
-          : 0
+      ? test.enrolledStudents.length
+      : Array.isArray(test?.attempts)
+      ? test.attempts.length
+      : 0;
 
     const status = test?.status
       ? test.status
       : test?.isActive === false
-        ? "inactive"
-        : "active"
+      ? "inactive"
+      : "active";
 
     return {
       id: String(id),
@@ -95,88 +98,104 @@ export default function TestsPage() {
       questions: questionsCount,
       enrolled: enrolledCount,
       status,
-    }
-  }, [])
+    };
+  }, []);
 
-  const loadTests = useCallback(async () => {
-    setIsLoading(true)
-    setError(null)
+  const loadTests = useCallback(
+    async (targetPage = page) => {
+      setIsLoading(true);
+      setError(null);
 
-    try {
-      const response = await adminAPI.tests.list({ limit: 100 })
-      const rawTests = response?.tests ?? response ?? []
-      const mapped = Array.isArray(rawTests)
-        ? rawTests
-            .map(normalizeTest)
-            .filter((item): item is TableTest => Boolean(item))
-        : []
+      try {
+        const response = await adminAPI.tests.list({
+          page: targetPage,
+          limit: PAGE_SIZE,
+        });
+        const rawTests = response?.tests ?? response ?? [];
+        const mapped = Array.isArray(rawTests)
+          ? rawTests
+              .map(normalizeTest)
+              .filter((item): item is TableTest => Boolean(item))
+          : [];
 
-      setTests(mapped)
-      setPagination(response?.pagination ?? null)
-    } catch (err) {
-      const status = (err as { status?: number })?.status
+        setTests(mapped);
+        setPagination(response?.pagination ?? null);
+      } catch (err) {
+        const status = (err as { status?: number })?.status;
 
-      if (status === 401) {
-        adminAPI.auth.clearSession()
-        setError(
-          "Automatic super-admin authentication failed. Confirm the configured credentials match your backend or run the super admin seeder.",
-        )
-        return
+        if (status === 401) {
+          adminAPI.auth.clearSession();
+          setError(
+            "Automatic super-admin authentication failed. Confirm the configured credentials match your backend or run the super admin seeder."
+          );
+          return;
+        }
+
+        const message =
+          err instanceof Error ? err.message : "Failed to load tests";
+        setError(message);
+      } finally {
+        setIsLoading(false);
       }
-
-      const message = err instanceof Error ? err.message : "Failed to load tests"
-      setError(message)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [normalizeTest])
+    },
+    [normalizeTest, page, PAGE_SIZE]
+  );
 
   useEffect(() => {
-    void loadTests()
-  }, [loadTests])
+    void loadTests(page);
+  }, [loadTests, page]);
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(searchInput), 300)
-    return () => clearTimeout(timer)
-  }, [searchInput])
+    const timer = setTimeout(() => setDebouncedSearch(searchInput), 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   const subjectOptions = useMemo(() => {
-    const unique = new Set<string>()
+    const unique = new Set<string>();
     tests.forEach((test) => {
       test.subject
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean)
-        .forEach((s) => unique.add(s))
-    })
-    return Array.from(unique)
-  }, [tests])
+        .forEach((s) => unique.add(s));
+    });
+    return Array.from(unique);
+  }, [tests]);
 
   const filteredTests = useMemo(() => {
-    const query = debouncedSearch.trim().toLowerCase()
-    const minMarks = minMarksFilter ? Number(minMarksFilter) : null
-    const minQuestions = minQuestionsFilter ? Number(minQuestionsFilter) : null
+    const query = debouncedSearch.trim().toLowerCase();
+    const minMarks = minMarksFilter ? Number(minMarksFilter) : null;
+    const minQuestions = minQuestionsFilter ? Number(minQuestionsFilter) : null;
 
     return tests.filter((test) => {
       const matchesSearch = query
         ? [test.title, test.subject]
             .filter(Boolean)
             .some((value) => value.toLowerCase().includes(query))
-        : true
+        : true;
 
       const matchesSubject = subjectFilter
         ? test.subject
             .split(",")
             .map((s) => s.trim().toLowerCase())
             .includes(subjectFilter.toLowerCase())
-        : true
+        : true;
 
-      const matchesMarks = minMarks !== null ? test.marks >= minMarks : true
-      const matchesQuestions = minQuestions !== null ? test.questions >= minQuestions : true
+      const matchesMarks = minMarks !== null ? test.marks >= minMarks : true;
+      const matchesQuestions =
+        minQuestions !== null ? test.questions >= minQuestions : true;
 
-      return matchesSearch && matchesSubject && matchesMarks && matchesQuestions
-    })
-  }, [tests, debouncedSearch, subjectFilter, minMarksFilter, minQuestionsFilter])
+      return (
+        matchesSearch && matchesSubject && matchesMarks && matchesQuestions
+      );
+    });
+  }, [
+    tests,
+    debouncedSearch,
+    subjectFilter,
+    minMarksFilter,
+    minQuestionsFilter,
+  ]);
 
   const columns = [
     { key: "title" as const, label: "Title", sortable: true },
@@ -191,7 +210,9 @@ export default function TestsPage() {
       render: (status: string) => (
         <span
           className={`px-3 py-1 rounded-full text-xs font-medium ${
-            status === "active" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+            status === "active"
+              ? "bg-green-100 text-green-800"
+              : "bg-red-100 text-red-800"
           }`}
         >
           {status}
@@ -203,13 +224,20 @@ export default function TestsPage() {
       label: "Actions",
       render: () => (
         <div className="flex justify-end">
-          <button className="p-1 hover:bg-gray-100 rounded" aria-label="Actions">
+          <button
+            className="p-1 hover:bg-gray-100 rounded"
+            aria-label="Actions"
+          >
             <MoreHorizontal className="w-4 h-4 text-gray-600" />
           </button>
         </div>
       ),
     },
-  ] as const
+  ] as const;
+
+  const handlePageChange = (nextPage: number) => {
+    setPage(nextPage);
+  };
 
   return (
     <div className="p-8">
@@ -257,7 +285,9 @@ export default function TestsPage() {
                   </select>
                 </div>
                 <div>
-                  <p className="text-xs font-semibold text-gray-600">Min Marks</p>
+                  <p className="text-xs font-semibold text-gray-600">
+                    Min Marks
+                  </p>
                   <select
                     className="mt-1 w-full rounded-md border border-gray-200 p-2 text-sm"
                     value={minMarksFilter}
@@ -270,7 +300,9 @@ export default function TestsPage() {
                   </select>
                 </div>
                 <div>
-                  <p className="text-xs font-semibold text-gray-600">Min Questions</p>
+                  <p className="text-xs font-semibold text-gray-600">
+                    Min Questions
+                  </p>
                   <select
                     className="mt-1 w-full rounded-md border border-gray-200 p-2 text-sm"
                     value={minQuestionsFilter}
@@ -288,14 +320,18 @@ export default function TestsPage() {
                     variant="ghost"
                     size="sm"
                     onClick={() => {
-                      setSubjectFilter("")
-                      setMinMarksFilter("")
-                      setMinQuestionsFilter("")
+                      setSubjectFilter("");
+                      setMinMarksFilter("");
+                      setMinQuestionsFilter("");
                     }}
                   >
                     Clear
                   </Button>
-                  <Button type="button" size="sm" onClick={() => setShowFilters(false)}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => setShowFilters(false)}
+                  >
                     Apply
                   </Button>
                 </div>
@@ -307,11 +343,13 @@ export default function TestsPage() {
             variant="outline"
             className="flex items-center gap-2"
             onClick={() => {
-              void loadTests()
+              void loadTests(page);
             }}
             disabled={isLoading}
           >
-            <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+            <RefreshCw
+              className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
+            />
             Refresh
           </Button>
         </div>
@@ -322,8 +360,19 @@ export default function TestsPage() {
           {error}
         </div>
       ) : (
-        <DataTable data={filteredTests} columns={columns} isLoading={isLoading} />
+        <DataTable
+          data={filteredTests}
+          columns={columns}
+          isLoading={isLoading}
+        />
       )}
+
+      <Pagination
+        currentPage={pagination?.currentPage ?? page}
+        totalPages={pagination?.totalPages ?? 1}
+        onPageChange={handlePageChange}
+        isLoading={isLoading}
+      />
 
       {pagination && (
         <p className="mt-3 text-sm text-gray-500">
@@ -331,5 +380,5 @@ export default function TestsPage() {
         </p>
       )}
     </div>
-  )
+  );
 }

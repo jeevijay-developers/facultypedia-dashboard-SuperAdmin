@@ -1,60 +1,63 @@
-"use client"
+"use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react"
-import { DataTable } from "@/components/admin/data-table"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { MoreHorizontal, RefreshCw } from "lucide-react"
-import adminAPI from "@/util/server"
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { DataTable } from "@/components/admin/data-table";
+import { Pagination } from "@/components/admin/pagination";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { MoreHorizontal, RefreshCw } from "lucide-react";
+import adminAPI from "@/util/server";
 
 type TableLiveClass = {
-  id: string
-  title: string
-  educatorName: string
-  subject: string
-  date: string | null
-  duration: number
-  capacity: number
-  enrolled: number
-  status: string
-}
+  id: string;
+  title: string;
+  educatorName: string;
+  subject: string;
+  date: string | null;
+  duration: number;
+  capacity: number;
+  enrolled: number;
+  status: string;
+};
 
 type PaginationMeta = {
-  currentPage: number
-  totalPages: number
-  totalLiveClasses: number
-  hasNextPage?: boolean
-  hasPrevPage?: boolean
-}
+  currentPage: number;
+  totalPages: number;
+  totalLiveClasses: number;
+  hasNextPage?: boolean;
+  hasPrevPage?: boolean;
+};
 
 const formatDate = (value: string | Date | null | undefined) => {
-  if (!value) return "—"
-  const date = value instanceof Date ? value : new Date(value)
-  if (Number.isNaN(date.getTime())) return "—"
-  return date.toLocaleDateString()
-}
+  if (!value) return "—";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString();
+};
 
 export default function LiveClassesPage() {
-  const [classes, setClasses] = useState<TableLiveClass[]>([])
-  const [pagination, setPagination] = useState<PaginationMeta | null>(null)
-  const [searchInput, setSearchInput] = useState("")
-  const [debouncedSearch, setDebouncedSearch] = useState("")
-  const [showFilters, setShowFilters] = useState(false)
-  const [subjectFilter, setSubjectFilter] = useState<string>("")
-  const [minDurationFilter, setMinDurationFilter] = useState<string>("")
-  const [minCapacityFilter, setMinCapacityFilter] = useState<string>("")
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [classes, setClasses] = useState<TableLiveClass[]>([]);
+  const [pagination, setPagination] = useState<PaginationMeta | null>(null);
+  const [page, setPage] = useState(1);
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
+  const [subjectFilter, setSubjectFilter] = useState<string>("");
+  const [minDurationFilter, setMinDurationFilter] = useState<string>("");
+  const [minCapacityFilter, setMinCapacityFilter] = useState<string>("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const PAGE_SIZE = 10;
 
   const normalizeLiveClass = useCallback((item: any): TableLiveClass | null => {
-    const id = item?.id ?? item?._id
-    if (!id) return null
+    const id = item?.id ?? item?._id;
+    if (!id) return null;
 
     const subjectList = Array.isArray(item?.subject)
       ? item.subject.filter(Boolean)
       : item?.subject
-        ? [item.subject]
-        : []
+      ? [item.subject]
+      : [];
 
     const educatorName =
       item?.educatorName ||
@@ -62,31 +65,34 @@ export default function LiveClassesPage() {
       item?.educatorID?.name ||
       item?.educatorID?.fullName ||
       item?.educatorID?.username ||
-      "Unknown"
+      "Unknown";
 
     const enrolledCount = Array.isArray(item?.enrolledStudents)
       ? item.enrolledStudents.length
       : Number.isFinite(Number(item?.enrolled))
-        ? Number(item.enrolled)
-        : 0
+      ? Number(item.enrolled)
+      : 0;
 
     const capacity = Number.isFinite(Number(item?.maxStudents))
       ? Number(item.maxStudents)
       : Number.isFinite(Number(item?.capacity))
-        ? Number(item.capacity)
-        : 0
+      ? Number(item.capacity)
+      : 0;
 
-    const classDate = item?.classTiming || item?.createdAt || null
-    const classDateObj = classDate ? new Date(classDate) : null
-    const isPast = classDateObj && !Number.isNaN(classDateObj.getTime()) && classDateObj < new Date()
+    const classDate = item?.classTiming || item?.createdAt || null;
+    const classDateObj = classDate ? new Date(classDate) : null;
+    const isPast =
+      classDateObj &&
+      !Number.isNaN(classDateObj.getTime()) &&
+      classDateObj < new Date();
 
     const status = item?.isCompleted
       ? "completed"
       : isPast
-        ? "completed"
-        : item?.isActive === false
-          ? "inactive"
-          : "upcoming"
+      ? "completed"
+      : item?.isActive === false
+      ? "inactive"
+      : "upcoming";
 
     return {
       id: String(id),
@@ -94,91 +100,118 @@ export default function LiveClassesPage() {
       educatorName,
       subject: subjectList.length ? subjectList.join(", ") : "—",
       date: item?.classTiming || item?.createdAt || null,
-      duration: Number.isFinite(Number(item?.classDuration)) ? Number(item.classDuration) : 0,
+      duration: Number.isFinite(Number(item?.classDuration))
+        ? Number(item.classDuration)
+        : 0,
       capacity,
       enrolled: enrolledCount,
       status,
-    }
-  }, [])
+    };
+  }, []);
 
-  const loadLiveClasses = useCallback(async () => {
-    setIsLoading(true)
-    setError(null)
+  const loadLiveClasses = useCallback(
+    async (targetPage = page) => {
+      setIsLoading(true);
+      setError(null);
 
-    try {
-      const response = await adminAPI.liveClasses.list({ limit: 100 })
-      const raw = response?.liveClasses ?? response?.data?.liveClasses ?? response ?? []
+      try {
+        const response = await adminAPI.liveClasses.list({
+          page: targetPage,
+          limit: PAGE_SIZE,
+        });
+        const raw =
+          response?.liveClasses ??
+          response?.data?.liveClasses ??
+          response ??
+          [];
 
-      const mapped = Array.isArray(raw)
-        ? raw.map(normalizeLiveClass).filter((item): item is TableLiveClass => Boolean(item))
-        : []
+        const mapped = Array.isArray(raw)
+          ? raw
+              .map(normalizeLiveClass)
+              .filter((item): item is TableLiveClass => Boolean(item))
+          : [];
 
-      setClasses(mapped)
-      setPagination(response?.pagination ?? response?.data?.pagination ?? null)
-    } catch (err) {
-      const status = (err as { status?: number })?.status
+        setClasses(mapped);
+        setPagination(
+          response?.pagination ?? response?.data?.pagination ?? null
+        );
+      } catch (err) {
+        const status = (err as { status?: number })?.status;
 
-      if (status === 401) {
-        adminAPI.auth.clearSession()
-        setError(
-          "Automatic super-admin authentication failed. Confirm the configured credentials or run the super admin seeder.",
-        )
-        return
+        if (status === 401) {
+          adminAPI.auth.clearSession();
+          setError(
+            "Automatic super-admin authentication failed. Confirm the configured credentials or run the super admin seeder."
+          );
+          return;
+        }
+
+        const message =
+          err instanceof Error ? err.message : "Failed to load live classes";
+        setError(message);
+      } finally {
+        setIsLoading(false);
       }
-
-      const message = err instanceof Error ? err.message : "Failed to load live classes"
-      setError(message)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [normalizeLiveClass])
+    },
+    [normalizeLiveClass, page, PAGE_SIZE]
+  );
 
   useEffect(() => {
-    void loadLiveClasses()
-  }, [loadLiveClasses])
+    void loadLiveClasses(page);
+  }, [loadLiveClasses, page]);
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(searchInput), 300)
-    return () => clearTimeout(timer)
-  }, [searchInput])
+    const timer = setTimeout(() => setDebouncedSearch(searchInput), 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   const subjectOptions = useMemo(() => {
-    const unique = new Set<string>()
+    const unique = new Set<string>();
     classes.forEach((c) => {
       c.subject
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean)
-        .forEach((s) => unique.add(s))
-    })
-    return Array.from(unique)
-  }, [classes])
+        .forEach((s) => unique.add(s));
+    });
+    return Array.from(unique);
+  }, [classes]);
 
   const filteredClasses = useMemo(() => {
-    const query = debouncedSearch.trim().toLowerCase()
-    const minDuration = minDurationFilter ? Number(minDurationFilter) : null
-    const minCapacity = minCapacityFilter ? Number(minCapacityFilter) : null
+    const query = debouncedSearch.trim().toLowerCase();
+    const minDuration = minDurationFilter ? Number(minDurationFilter) : null;
+    const minCapacity = minCapacityFilter ? Number(minCapacityFilter) : null;
 
     return classes.filter((liveClass) => {
       const matchesSearch = query
         ? [liveClass.title, liveClass.educatorName, liveClass.subject]
             .filter(Boolean)
             .some((value) => value.toLowerCase().includes(query))
-        : true
+        : true;
 
       const matchesSubject = subjectFilter
         ? liveClass.subject
             .split(",")
             .map((s) => s.trim().toLowerCase())
             .includes(subjectFilter.toLowerCase())
-        : true
+        : true;
 
-      const matchesDuration = minDuration !== null ? liveClass.duration >= minDuration : true
-      const matchesCapacity = minCapacity !== null ? liveClass.capacity >= minCapacity : true
+      const matchesDuration =
+        minDuration !== null ? liveClass.duration >= minDuration : true;
+      const matchesCapacity =
+        minCapacity !== null ? liveClass.capacity >= minCapacity : true;
 
-      return matchesSearch && matchesSubject && matchesDuration && matchesCapacity
-    })
-  }, [classes, debouncedSearch, subjectFilter, minDurationFilter, minCapacityFilter])
+      return (
+        matchesSearch && matchesSubject && matchesDuration && matchesCapacity
+      );
+    });
+  }, [
+    classes,
+    debouncedSearch,
+    subjectFilter,
+    minDurationFilter,
+    minCapacityFilter,
+  ]);
 
   const columns = [
     { key: "title" as const, label: "Title", sortable: true },
@@ -202,8 +235,8 @@ export default function LiveClassesPage() {
             status === "completed"
               ? "bg-gray-100 text-gray-800"
               : status === "inactive"
-                ? "bg-red-100 text-red-800"
-                : "bg-blue-100 text-blue-800"
+              ? "bg-red-100 text-red-800"
+              : "bg-blue-100 text-blue-800"
           }`}
         >
           {status}
@@ -215,13 +248,20 @@ export default function LiveClassesPage() {
       label: "Actions",
       render: () => (
         <div className="flex justify-end">
-          <button className="p-1 hover:bg-gray-100 rounded" aria-label="Actions">
+          <button
+            className="p-1 hover:bg-gray-100 rounded"
+            aria-label="Actions"
+          >
             <MoreHorizontal className="w-4 h-4 text-gray-600" />
           </button>
         </div>
       ),
     },
-  ] as const
+  ] as const;
+
+  const handlePageChange = (nextPage: number) => {
+    setPage(nextPage);
+  };
 
   return (
     <div className="p-8">
@@ -269,7 +309,9 @@ export default function LiveClassesPage() {
                   </select>
                 </div>
                 <div>
-                  <p className="text-xs font-semibold text-gray-600">Min Duration (min)</p>
+                  <p className="text-xs font-semibold text-gray-600">
+                    Min Duration (min)
+                  </p>
                   <select
                     className="mt-1 w-full rounded-md border border-gray-200 p-2 text-sm"
                     value={minDurationFilter}
@@ -282,7 +324,9 @@ export default function LiveClassesPage() {
                   </select>
                 </div>
                 <div>
-                  <p className="text-xs font-semibold text-gray-600">Min Capacity</p>
+                  <p className="text-xs font-semibold text-gray-600">
+                    Min Capacity
+                  </p>
                   <select
                     className="mt-1 w-full rounded-md border border-gray-200 p-2 text-sm"
                     value={minCapacityFilter}
@@ -300,14 +344,18 @@ export default function LiveClassesPage() {
                     variant="ghost"
                     size="sm"
                     onClick={() => {
-                      setSubjectFilter("")
-                      setMinDurationFilter("")
-                      setMinCapacityFilter("")
+                      setSubjectFilter("");
+                      setMinDurationFilter("");
+                      setMinCapacityFilter("");
                     }}
                   >
                     Clear
                   </Button>
-                  <Button type="button" size="sm" onClick={() => setShowFilters(false)}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => setShowFilters(false)}
+                  >
                     Apply
                   </Button>
                 </div>
@@ -319,11 +367,13 @@ export default function LiveClassesPage() {
             variant="outline"
             className="flex items-center gap-2"
             onClick={() => {
-              void loadLiveClasses()
+              void loadLiveClasses(page);
             }}
             disabled={isLoading}
           >
-            <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+            <RefreshCw
+              className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
+            />
             Refresh
           </Button>
         </div>
@@ -334,14 +384,26 @@ export default function LiveClassesPage() {
           {error}
         </div>
       ) : (
-        <DataTable data={filteredClasses} columns={columns} isLoading={isLoading} />
+        <DataTable
+          data={filteredClasses}
+          columns={columns}
+          isLoading={isLoading}
+        />
       )}
+
+      <Pagination
+        currentPage={pagination?.currentPage ?? page}
+        totalPages={pagination?.totalPages ?? 1}
+        onPageChange={handlePageChange}
+        isLoading={isLoading}
+      />
 
       {pagination && (
         <p className="mt-3 text-sm text-gray-500">
-          Showing {filteredClasses.length} of {pagination.totalLiveClasses} live classes
+          Showing {filteredClasses.length} of {pagination.totalLiveClasses} live
+          classes
         </p>
       )}
     </div>
-  )
+  );
 }

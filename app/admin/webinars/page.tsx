@@ -1,177 +1,200 @@
-"use client"
+"use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react"
-import { DataTable } from "@/components/admin/data-table"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { MoreHorizontal, RefreshCw } from "lucide-react"
-import adminAPI from "@/util/server"
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { DataTable } from "@/components/admin/data-table";
+import { Pagination } from "@/components/admin/pagination";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { MoreHorizontal, RefreshCw } from "lucide-react";
+import adminAPI from "@/util/server";
 
 type TableWebinar = {
-  id: string
-  title: string
-  educatorName: string
-  subject: string
-  date: string | null
-  capacity: number
-  enrolled: number
-  fees: number
-  status: string
-}
+  id: string;
+  title: string;
+  educatorName: string;
+  subject: string;
+  date: string | null;
+  capacity: number;
+  enrolled: number;
+  fees: number;
+  status: string;
+};
 
 type PaginationMeta = {
-  currentPage: number
-  totalPages: number
-  totalWebinars: number
-  hasNextPage?: boolean
-  hasPrevPage?: boolean
-}
+  currentPage: number;
+  totalPages: number;
+  totalWebinars: number;
+  hasNextPage?: boolean;
+  hasPrevPage?: boolean;
+};
 
 const formatDate = (value: string | Date | null | undefined) => {
-  if (!value) return "—"
-  const date = value instanceof Date ? value : new Date(value)
-  if (Number.isNaN(date.getTime())) return "—"
-  return date.toLocaleDateString()
-}
+  if (!value) return "—";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString();
+};
 
 export default function WebinarsPage() {
-  const [webinars, setWebinars] = useState<TableWebinar[]>([])
-  const [pagination, setPagination] = useState<PaginationMeta | null>(null)
-  const [searchInput, setSearchInput] = useState("")
-  const [debouncedSearch, setDebouncedSearch] = useState("")
-  const [showFilters, setShowFilters] = useState(false)
-  const [subjectFilter, setSubjectFilter] = useState<string>("")
-  const [minCapacityFilter, setMinCapacityFilter] = useState<string>("")
-  const [minFeesFilter, setMinFeesFilter] = useState<string>("")
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [webinars, setWebinars] = useState<TableWebinar[]>([]);
+  const [pagination, setPagination] = useState<PaginationMeta | null>(null);
+  const [page, setPage] = useState(1);
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
+  const [subjectFilter, setSubjectFilter] = useState<string>("");
+  const [minCapacityFilter, setMinCapacityFilter] = useState<string>("");
+  const [minFeesFilter, setMinFeesFilter] = useState<string>("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const PAGE_SIZE = 10;
 
   const normalizeWebinar = useCallback((item: any): TableWebinar | null => {
-    const id = item?.id ?? item?._id
+    const id = item?.id ?? item?._id;
     if (!id) {
-      return null
+      return null;
     }
 
     const subjectList = Array.isArray(item?.subject)
       ? item.subject.filter(Boolean)
       : item?.subject
-        ? [item.subject]
-        : []
+      ? [item.subject]
+      : [];
 
-    const subject = subjectList.length ? subjectList.join(", ") : "—"
+    const subject = subjectList.length ? subjectList.join(", ") : "—";
 
     const enrolledCount = Number.isFinite(Number(item?.enrolled))
       ? Number(item.enrolled)
       : Array.isArray(item?.studentEnrolled)
-        ? item.studentEnrolled.length
-        : Number(item?.enrolledCount ?? 0)
+      ? item.studentEnrolled.length
+      : Number(item?.enrolledCount ?? 0);
 
     const capacity = Number.isFinite(Number(item?.capacity))
       ? Number(item.capacity)
       : Number.isFinite(Number(item?.seatLimit))
-        ? Number(item.seatLimit)
-        : 0
+      ? Number(item.seatLimit)
+      : 0;
 
-    const feesValue = Number.isFinite(Number(item?.fees)) ? Number(item.fees) : 0
+    const feesValue = Number.isFinite(Number(item?.fees))
+      ? Number(item.fees)
+      : 0;
 
     const status = item?.status
       ? item.status
       : item?.isActive === false
-        ? "inactive"
-        : "active"
+      ? "inactive"
+      : "active";
 
     return {
       id: String(id),
       title: item?.title || "Untitled webinar",
-      educatorName: item?.educatorName || item?.educator || item?.educatorID?.fullName || "Unknown",
+      educatorName:
+        item?.educatorName ||
+        item?.educator ||
+        item?.educatorID?.fullName ||
+        "Unknown",
       subject,
       date: item?.date || item?.timing || item?.createdAt || null,
       capacity,
       enrolled: enrolledCount,
       fees: feesValue,
       status,
-    }
-  }, [])
+    };
+  }, []);
 
-  const loadWebinars = useCallback(async () => {
-    setIsLoading(true)
-    setError(null)
+  const loadWebinars = useCallback(
+    async (targetPage = page) => {
+      setIsLoading(true);
+      setError(null);
 
-    try {
-      const response = await adminAPI.webinars.list({ limit: 100 })
-      const rawWebinars = response?.webinars ?? response ?? []
-      const mapped = Array.isArray(rawWebinars)
-        ? rawWebinars
-            .map(normalizeWebinar)
-            .filter((item): item is TableWebinar => Boolean(item))
-        : []
+      try {
+        const response = await adminAPI.webinars.list({
+          page: targetPage,
+          limit: PAGE_SIZE,
+        });
+        const rawWebinars = response?.webinars ?? response ?? [];
+        const mapped = Array.isArray(rawWebinars)
+          ? rawWebinars
+              .map(normalizeWebinar)
+              .filter((item): item is TableWebinar => Boolean(item))
+          : [];
 
-      setWebinars(mapped)
-      setPagination(response?.pagination ?? null)
-    } catch (err) {
-      const status = (err as { status?: number })?.status
+        setWebinars(mapped);
+        setPagination(response?.pagination ?? null);
+      } catch (err) {
+        const status = (err as { status?: number })?.status;
 
-      if (status === 401) {
-        adminAPI.auth.clearSession()
-        setError(
-          "Automatic super-admin authentication failed. Confirm the configured credentials match your backend or run the super admin seeder.",
-        )
-        return
+        if (status === 401) {
+          adminAPI.auth.clearSession();
+          setError(
+            "Automatic super-admin authentication failed. Confirm the configured credentials match your backend or run the super admin seeder."
+          );
+          return;
+        }
+
+        const message =
+          err instanceof Error ? err.message : "Failed to load webinars";
+        setError(message);
+      } finally {
+        setIsLoading(false);
       }
-
-      const message = err instanceof Error ? err.message : "Failed to load webinars"
-      setError(message)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [normalizeWebinar])
+    },
+    [normalizeWebinar, page, PAGE_SIZE]
+  );
 
   useEffect(() => {
-    void loadWebinars()
-  }, [loadWebinars])
+    void loadWebinars(page);
+  }, [loadWebinars, page]);
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(searchInput), 300)
-    return () => clearTimeout(timer)
-  }, [searchInput])
+    const timer = setTimeout(() => setDebouncedSearch(searchInput), 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   const subjectOptions = useMemo(() => {
-    const unique = new Set<string>()
+    const unique = new Set<string>();
     webinars.forEach((webinar) => {
       webinar.subject
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean)
-        .forEach((s) => unique.add(s))
-    })
-    return Array.from(unique)
-  }, [webinars])
+        .forEach((s) => unique.add(s));
+    });
+    return Array.from(unique);
+  }, [webinars]);
 
   const filteredWebinars = useMemo(() => {
-    const query = debouncedSearch.trim().toLowerCase()
-    const minCapacity = minCapacityFilter ? Number(minCapacityFilter) : null
-    const minFees = minFeesFilter ? Number(minFeesFilter) : null
+    const query = debouncedSearch.trim().toLowerCase();
+    const minCapacity = minCapacityFilter ? Number(minCapacityFilter) : null;
+    const minFees = minFeesFilter ? Number(minFeesFilter) : null;
 
     return webinars.filter((webinar) => {
       const matchesSearch = query
         ? [webinar.title, webinar.educatorName, webinar.subject]
             .filter(Boolean)
             .some((value) => value.toLowerCase().includes(query))
-        : true
+        : true;
 
       const matchesSubject = subjectFilter
         ? webinar.subject
             .split(",")
             .map((s) => s.trim().toLowerCase())
             .includes(subjectFilter.toLowerCase())
-        : true
+        : true;
 
-      const matchesCapacity = minCapacity !== null ? webinar.capacity >= minCapacity : true
-      const matchesFees = minFees !== null ? webinar.fees >= minFees : true
+      const matchesCapacity =
+        minCapacity !== null ? webinar.capacity >= minCapacity : true;
+      const matchesFees = minFees !== null ? webinar.fees >= minFees : true;
 
-      return matchesSearch && matchesSubject && matchesCapacity && matchesFees
-    })
-  }, [webinars, debouncedSearch, subjectFilter, minCapacityFilter, minFeesFilter])
+      return matchesSearch && matchesSubject && matchesCapacity && matchesFees;
+    });
+  }, [
+    webinars,
+    debouncedSearch,
+    subjectFilter,
+    minCapacityFilter,
+    minFeesFilter,
+  ]);
 
   const columns = [
     { key: "title" as const, label: "Title", sortable: true },
@@ -197,7 +220,9 @@ export default function WebinarsPage() {
       render: (status: string) => (
         <span
           className={`px-3 py-1 rounded-full text-xs font-medium ${
-            status === "active" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+            status === "active"
+              ? "bg-green-100 text-green-800"
+              : "bg-red-100 text-red-800"
           }`}
         >
           {status}
@@ -209,13 +234,20 @@ export default function WebinarsPage() {
       label: "Actions",
       render: () => (
         <div className="flex justify-end">
-          <button className="p-1 hover:bg-gray-100 rounded" aria-label="Actions">
+          <button
+            className="p-1 hover:bg-gray-100 rounded"
+            aria-label="Actions"
+          >
             <MoreHorizontal className="w-4 h-4 text-gray-600" />
           </button>
         </div>
       ),
     },
-  ] as const
+  ] as const;
+
+  const handlePageChange = (nextPage: number) => {
+    setPage(nextPage);
+  };
 
   return (
     <div className="p-8">
@@ -263,7 +295,9 @@ export default function WebinarsPage() {
                   </select>
                 </div>
                 <div>
-                  <p className="text-xs font-semibold text-gray-600">Min Capacity</p>
+                  <p className="text-xs font-semibold text-gray-600">
+                    Min Capacity
+                  </p>
                   <select
                     className="mt-1 w-full rounded-md border border-gray-200 p-2 text-sm"
                     value={minCapacityFilter}
@@ -294,14 +328,18 @@ export default function WebinarsPage() {
                     variant="ghost"
                     size="sm"
                     onClick={() => {
-                      setSubjectFilter("")
-                      setMinCapacityFilter("")
-                      setMinFeesFilter("")
+                      setSubjectFilter("");
+                      setMinCapacityFilter("");
+                      setMinFeesFilter("");
                     }}
                   >
                     Clear
                   </Button>
-                  <Button type="button" size="sm" onClick={() => setShowFilters(false)}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => setShowFilters(false)}
+                  >
                     Apply
                   </Button>
                 </div>
@@ -313,11 +351,13 @@ export default function WebinarsPage() {
             variant="outline"
             className="flex items-center gap-2"
             onClick={() => {
-              void loadWebinars()
+              void loadWebinars(page);
             }}
             disabled={isLoading}
           >
-            <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+            <RefreshCw
+              className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
+            />
             Refresh
           </Button>
         </div>
@@ -328,14 +368,26 @@ export default function WebinarsPage() {
           {error}
         </div>
       ) : (
-        <DataTable data={filteredWebinars} columns={columns} isLoading={isLoading} />
+        <DataTable
+          data={filteredWebinars}
+          columns={columns}
+          isLoading={isLoading}
+        />
       )}
+
+      <Pagination
+        currentPage={pagination?.currentPage ?? page}
+        totalPages={pagination?.totalPages ?? 1}
+        onPageChange={handlePageChange}
+        isLoading={isLoading}
+      />
 
       {pagination && (
         <p className="mt-3 text-sm text-gray-500">
-          Showing {filteredWebinars.length} of {pagination.totalWebinars} webinars
+          Showing {filteredWebinars.length} of {pagination.totalWebinars}{" "}
+          webinars
         </p>
       )}
     </div>
-  )
+  );
 }

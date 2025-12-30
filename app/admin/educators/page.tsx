@@ -5,7 +5,7 @@ import { DataTable } from "@/components/admin/data-table";
 import { Pagination } from "@/components/admin/pagination";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Eye, MoreHorizontal, RefreshCw, X } from "lucide-react";
+import { Eye, RefreshCw, X } from "lucide-react";
 import adminAPI from "@/util/server";
 
 type TableEducator = {
@@ -35,7 +35,6 @@ export default function EducatorsPage() {
   const [pagination, setPagination] = useState<PaginationMeta | null>(null);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [selectedEducator, setSelectedEducator] =
     useState<TableEducator | null>(null);
   const [showFilters, setShowFilters] = useState(false);
@@ -43,6 +42,7 @@ export default function EducatorsPage() {
   const [ratingFilter, setRatingFilter] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [statusUpdating, setStatusUpdating] = useState<Record<string, boolean>>({});
   const PAGE_SIZE = 10;
 
   const normalizeEducator = useCallback(
@@ -141,32 +141,38 @@ export default function EducatorsPage() {
   );
 
   useEffect(() => {
-    const handleDocumentClick = (event: MouseEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.closest('[data-educator-menu="actions"]')) {
-        return;
-      }
-      setOpenMenuId(null);
-    };
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setOpenMenuId(null);
-        setSelectedEducator(null);
-      }
-    };
-
-    document.addEventListener("click", handleDocumentClick);
-    document.addEventListener("keydown", handleEscape);
-
-    return () => {
-      document.removeEventListener("click", handleDocumentClick);
-      document.removeEventListener("keydown", handleEscape);
-    };
-  }, []);
-
-  useEffect(() => {
     void loadEducators(page);
   }, [loadEducators, page]);
+
+  const toggleEducatorStatus = useCallback(
+    async (row: TableEducator) => {
+      const nextStatus = row.status === "active" ? "inactive" : "active";
+
+      setStatusUpdating((prev) => ({ ...prev, [row.id]: true }));
+      setEducators((prev) =>
+        prev.map((edu) =>
+          edu.id === row.id ? { ...edu, status: nextStatus } : edu
+        )
+      );
+
+      try {
+        await adminAPI.educators.updateStatus(row.id, nextStatus);
+      } catch (err) {
+        setEducators((prev) =>
+          prev.map((edu) =>
+            edu.id === row.id ? { ...edu, status: row.status } : edu
+          )
+        );
+
+        const message =
+          err instanceof Error ? err.message : "Failed to update educator status";
+        setError(message);
+      } finally {
+        setStatusUpdating((prev) => ({ ...prev, [row.id]: false }));
+      }
+    },
+    []
+  );
 
   const specializationOptions = useMemo(() => {
     const unique = new Set<string>();
@@ -209,58 +215,48 @@ export default function EducatorsPage() {
     {
       key: "status" as const,
       label: "Status",
-      render: (status: string) => (
-        <span
-          className={`px-3 py-1 rounded-full text-xs font-medium ${
-            status === "active"
-              ? "bg-green-100 text-green-800"
-              : "bg-red-100 text-red-800"
-          }`}
-        >
-          {status}
-        </span>
+      render: (status: string, row: TableEducator) => (
+        <div className="flex items-center gap-3">
+          <span
+            className={`px-3 py-1 rounded-full text-xs font-medium ${
+              status === "active"
+                ? "bg-green-100 text-green-800"
+                : "bg-red-100 text-red-800"
+            }`}
+          >
+            {status}
+          </span>
+          <button
+            type="button"
+            className="rounded border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={(event) => {
+              event.stopPropagation();
+              void toggleEducatorStatus(row);
+            }}
+            disabled={Boolean(statusUpdating[row.id]) || isLoading}
+          >
+            {row.status === "active" ? "Deactivate" : "Activate"}
+          </button>
+        </div>
       ),
     },
     {
       key: "id" as const,
-      label: "Actions",
+      label: "View",
       render: (_value: string, row: TableEducator) => (
-        <div
-          className="relative flex justify-end"
-          onClick={(event) => event.stopPropagation()}
-          data-educator-menu="actions"
-        >
+        <div className="flex justify-end">
           <button
             type="button"
-            className="p-1 hover:bg-gray-100 rounded"
+            className="flex items-center gap-2 rounded border border-gray-200 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
             onClick={(event) => {
               event.stopPropagation();
-              setOpenMenuId((prev) => (prev === row.id ? null : row.id));
+              setSelectedEducator(row);
             }}
-            aria-haspopup="menu"
-            aria-expanded={openMenuId === row.id}
+            aria-label="View educator"
           >
-            <MoreHorizontal className="w-4 h-4 text-gray-600" />
+            <Eye className="w-4 h-4" />
+            View
           </button>
-          {openMenuId === row.id && (
-            <div
-              className="absolute right-0 mt-2 w-32 rounded-md border border-gray-200 bg-white py-1 shadow-lg z-10"
-              role="menu"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-                onClick={() => {
-                  setOpenMenuId(null);
-                  setSelectedEducator(row);
-                }}
-              >
-                <Eye className="w-4 h-4 text-gray-600" />
-                View
-              </button>
-            </div>
-          )}
         </div>
       ),
     },

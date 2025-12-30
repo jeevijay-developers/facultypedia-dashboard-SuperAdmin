@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { DataTable } from "@/components/admin/data-table"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { MoreHorizontal, RefreshCw } from "lucide-react"
+import { Eye, RefreshCw, X } from "lucide-react"
 import adminAPI from "@/util/server"
 
 type TableStudent = {
@@ -37,6 +37,7 @@ export default function StudentsPage() {
   const [examFilter, setExamFilter] = useState<string>("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [selectedStudent, setSelectedStudent] = useState<TableStudent | null>(null)
 
   const normalizeStudent = useCallback((student: any): TableStudent | null => {
     const id = student?.id ?? student?._id
@@ -167,25 +168,21 @@ export default function StudentsPage() {
     { key: "specialization" as const, label: "Exam", sortable: true },
     { key: "enrolledCourses" as const, label: "Courses", sortable: true },
     {
-      key: "status" as const,
-      label: "Status",
-      render: (status: string) => (
-        <span
-          className={`px-3 py-1 rounded-full text-xs font-medium ${
-            status === "active" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
-          }`}
-        >
-          {status}
-        </span>
-      ),
-    },
-    {
       key: "id" as const,
-      label: "Actions",
-      render: () => (
+      label: "View",
+      render: (_value: string, row: TableStudent) => (
         <div className="flex justify-end">
-          <button className="p-1 hover:bg-gray-100 rounded" aria-label="Actions">
-            <MoreHorizontal className="w-4 h-4 text-gray-600" />
+          <button
+            type="button"
+            className="flex items-center gap-2 rounded border border-gray-200 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
+            onClick={(event) => {
+              event.stopPropagation()
+              setSelectedStudent(row)
+            }}
+            aria-label="View student"
+          >
+            <Eye className="w-4 h-4" />
+            View
           </button>
         </div>
       ),
@@ -299,6 +296,71 @@ export default function StudentsPage() {
         <p className="mt-3 text-sm text-gray-500">
           Showing {filteredStudents.length} of {pagination.totalStudents} students
         </p>
+      )}
+
+      {selectedStudent && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setSelectedStudent(null)}
+        >
+          <div
+            className="w-full max-w-lg rounded-lg bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+              <h2 className="text-lg font-semibold text-gray-900">Student Details</h2>
+              <button
+                type="button"
+                className="rounded-full p-1 hover:bg-gray-100"
+                onClick={() => setSelectedStudent(null)}
+                aria-label="Close details"
+              >
+                <X className="h-5 w-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="space-y-4 px-6 py-5 text-sm text-gray-700">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500">Name</p>
+                <p className="mt-1 text-base font-medium text-gray-900">{selectedStudent.name}</p>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Email</p>
+                  <p className="mt-1 break-all text-sm text-gray-900">{selectedStudent.email}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Class</p>
+                  <p className="mt-1 text-sm text-gray-900">{selectedStudent.class}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Exam</p>
+                  <p className="mt-1 text-sm text-gray-900">{selectedStudent.specialization}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Courses</p>
+                  <p className="mt-1 text-sm text-gray-900">{selectedStudent.enrolledCourses}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Joined</p>
+                  <p className="mt-1 text-sm text-gray-900">{selectedStudent.joinedAt || "—"}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end border-t border-gray-200 px-6 py-4">
+              <Button type="button" variant="outline" onClick={() => setSelectedStudent(null)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

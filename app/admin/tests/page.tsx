@@ -5,7 +5,7 @@ import { DataTable } from "@/components/admin/data-table";
 import { Pagination } from "@/components/admin/pagination";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { MoreHorizontal, RefreshCw } from "lucide-react";
+import { Eye, RefreshCw, X } from "lucide-react";
 import adminAPI from "@/util/server";
 
 type TableTest = {
@@ -39,6 +39,7 @@ export default function TestsPage() {
   const [minQuestionsFilter, setMinQuestionsFilter] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedTest, setSelectedTest] = useState<TableTest | null>(null);
   const PAGE_SIZE = 10;
 
   const normalizeTest = useCallback((test: any): TableTest | null => {
@@ -221,14 +222,20 @@ export default function TestsPage() {
     },
     {
       key: "id" as const,
-      label: "Actions",
-      render: () => (
+      label: "View",
+      render: (_value: string, row: TableTest) => (
         <div className="flex justify-end">
           <button
-            className="p-1 hover:bg-gray-100 rounded"
-            aria-label="Actions"
+            type="button"
+            className="flex items-center gap-2 rounded border border-gray-200 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
+            onClick={(event) => {
+              event.stopPropagation();
+              setSelectedTest(row);
+            }}
+            aria-label="View test"
           >
-            <MoreHorizontal className="w-4 h-4 text-gray-600" />
+            <Eye className="w-4 h-4" />
+            View
           </button>
         </div>
       ),
@@ -365,6 +372,83 @@ export default function TestsPage() {
           columns={columns}
           isLoading={isLoading}
         />
+      )}
+
+      {selectedTest && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setSelectedTest(null)}
+        >
+          <div
+            className="w-full max-w-lg rounded-lg bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+              <h2 className="text-lg font-semibold text-gray-900">Test Details</h2>
+              <button
+                type="button"
+                className="rounded-full p-1 hover:bg-gray-100"
+                onClick={() => setSelectedTest(null)}
+                aria-label="Close details"
+              >
+                <X className="h-5 w-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="space-y-4 px-6 py-5 text-sm text-gray-700">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500">Title</p>
+                <p className="mt-1 text-base font-medium text-gray-900">{selectedTest.title}</p>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Subject</p>
+                  <p className="mt-1 text-sm text-gray-900">{selectedTest.subject}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Duration (min)</p>
+                  <p className="mt-1 text-sm text-gray-900">{selectedTest.duration}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Marks</p>
+                  <p className="mt-1 text-sm text-gray-900">{selectedTest.marks}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Questions</p>
+                  <p className="mt-1 text-sm text-gray-900">{selectedTest.questions}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Enrolled</p>
+                  <p className="mt-1 text-sm text-gray-900">{selectedTest.enrolled}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Status</p>
+                  <span
+                    className={`mt-1 inline-flex w-fit items-center rounded-full px-3 py-1 text-xs font-medium ${
+                      selectedTest.status === "active"
+                        ? "bg-green-100 text-green-700"
+                        : "bg-red-100 text-red-700"
+                    }`}
+                  >
+                    {selectedTest.status}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end border-t border-gray-200 px-6 py-4">
+              <Button type="button" variant="outline" onClick={() => setSelectedTest(null)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       <Pagination

@@ -5,7 +5,7 @@ import { DataTable } from "@/components/admin/data-table";
 import { Pagination } from "@/components/admin/pagination";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { MoreHorizontal, RefreshCw } from "lucide-react";
+import { Eye, RefreshCw, X } from "lucide-react";
 import adminAPI from "@/util/server";
 
 type TableTestSeries = {
@@ -46,6 +46,7 @@ export default function TestSeriesPage() {
   const [minEnrolledFilter, setMinEnrolledFilter] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedSeries, setSelectedSeries] = useState<TableTestSeries | null>(null);
   const PAGE_SIZE = 10;
 
   const normalizeSeries = useCallback((item: any): TableTestSeries | null => {
@@ -203,14 +204,20 @@ export default function TestSeriesPage() {
     },
     {
       key: "id" as const,
-      label: "Actions",
-      render: () => (
+      label: "View",
+      render: (_value: string, row: TableTestSeries) => (
         <div className="flex justify-end">
           <button
-            className="p-1 hover:bg-gray-100 rounded"
-            aria-label="Actions"
+            type="button"
+            className="flex items-center gap-2 rounded border border-gray-200 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
+            onClick={(event) => {
+              event.stopPropagation();
+              setSelectedSeries(row);
+            }}
+            aria-label="View test series"
           >
-            <MoreHorizontal className="w-4 h-4 text-gray-600" />
+            <Eye className="w-4 h-4" />
+            View
           </button>
         </div>
       ),
@@ -347,6 +354,83 @@ export default function TestSeriesPage() {
           columns={columns}
           isLoading={isLoading}
         />
+      )}
+
+      {selectedSeries && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setSelectedSeries(null)}
+        >
+          <div
+            className="w-full max-w-lg rounded-lg bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+              <h2 className="text-lg font-semibold text-gray-900">Test Series Details</h2>
+              <button
+                type="button"
+                className="rounded-full p-1 hover:bg-gray-100"
+                onClick={() => setSelectedSeries(null)}
+                aria-label="Close details"
+              >
+                <X className="h-5 w-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="space-y-4 px-6 py-5 text-sm text-gray-700">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500">Title</p>
+                <p className="mt-1 text-base font-medium text-gray-900">{selectedSeries.title}</p>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Educator</p>
+                  <p className="mt-1 text-sm text-gray-900">{selectedSeries.educatorName}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Tests</p>
+                  <p className="mt-1 text-sm text-gray-900">{selectedSeries.tests}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Price</p>
+                  <p className="mt-1 text-sm text-gray-900">₹{Number(selectedSeries.price || 0).toLocaleString("en-IN")}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Validity</p>
+                  <p className="mt-1 text-sm text-gray-900">{formatDate(selectedSeries.validity)}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Enrolled</p>
+                  <p className="mt-1 text-sm text-gray-900">{selectedSeries.enrolled}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Status</p>
+                  <span
+                    className={`mt-1 inline-flex w-fit items-center rounded-full px-3 py-1 text-xs font-medium ${
+                      selectedSeries.status === "active"
+                        ? "bg-green-100 text-green-700"
+                        : "bg-red-100 text-red-700"
+                    }`}
+                  >
+                    {selectedSeries.status}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end border-t border-gray-200 px-6 py-4">
+              <Button type="button" variant="outline" onClick={() => setSelectedSeries(null)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       <Pagination

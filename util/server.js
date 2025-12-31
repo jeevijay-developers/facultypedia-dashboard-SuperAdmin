@@ -98,6 +98,8 @@ const buildURL = (path, params) => {
 const getAccessToken = () => storage.getItem(ACCESS_TOKEN_KEY);
 const getRefreshToken = () => storage.getItem(REFRESH_TOKEN_KEY);
 
+export const getAdminAccessToken = () => getAccessToken();
+
 export const getCachedAdminProfile = () =>
   safeJSONParse(storage.getItem(PROFILE_KEY));
 
@@ -659,6 +661,119 @@ export const fetchVideos = async (params) => {
   return response?.data ?? response;
 };
 
+// ============================
+// Admin–Educator Chat APIs
+// ============================
+
+export const fetchChatConversations = async () => {
+  await ensureAdminSession();
+  const response = await request("/api/chat/conversations");
+  return response?.data ?? response;
+};
+
+export const fetchChatMessages = async (
+  conversationId,
+  page = 1,
+  limit = 50
+) => {
+  if (!conversationId) {
+    throw new Error("Conversation ID is required");
+  }
+  await ensureAdminSession();
+  const response = await request(
+    `/api/chat/conversations/${conversationId}/messages`,
+    { params: { page, limit } }
+  );
+  return response?.data ?? response;
+};
+
+export const sendChatMessage = async (payload) => {
+  const {
+    conversationId,
+    receiverId,
+    receiverType,
+    content,
+    messageType = "text",
+    attachments = [],
+  } = payload || {};
+
+  if (!conversationId || !receiverId || !receiverType || !content) {
+    throw new Error(
+      "conversationId, receiverId, receiverType, and content are required"
+    );
+  }
+
+  await ensureAdminSession();
+
+  const response = await request("/api/chat/messages", {
+    method: "POST",
+    body: {
+      conversationId,
+      receiverId,
+      receiverType,
+      content,
+      messageType,
+      attachments,
+    },
+  });
+  return response?.data ?? response;
+};
+
+export const markChatMessageAsRead = async (messageId) => {
+  if (!messageId) {
+    throw new Error("Message ID is required");
+  }
+
+  await ensureAdminSession();
+
+  const response = await request(`/api/chat/messages/${messageId}/read`, {
+    method: "PUT",
+  });
+
+  return response?.data ?? response;
+};
+
+export const markChatConversationAsRead = async (conversationId) => {
+  if (!conversationId) {
+    throw new Error("Conversation ID is required");
+  }
+
+  await ensureAdminSession();
+
+  const response = await request(
+    `/api/chat/conversations/${conversationId}/read`,
+    {
+      method: "PUT",
+    }
+  );
+
+  return response?.data ?? response;
+};
+
+export const fetchUnreadChatCount = async () => {
+  await ensureAdminSession();
+  const response = await request(`/api/chat/unread-count`);
+  return response?.data ?? response;
+};
+
+export const uploadChatImage = async (file) => {
+  if (!file) {
+    throw new Error("Image file is required");
+  }
+
+  await ensureAdminSession();
+
+  const formData = new FormData();
+  formData.append("image", file);
+
+  const response = await request("/api/chat/upload/image", {
+    method: "POST",
+    body: formData,
+  });
+
+  return response?.data ?? response;
+};
+
 const adminAPI = {
   auth: {
     login: adminLogin,
@@ -718,6 +833,15 @@ const adminAPI = {
   },
   videos: {
     list: fetchVideos,
+  },
+  chat: {
+    listConversations: fetchChatConversations,
+    listMessages: fetchChatMessages,
+    sendMessage: sendChatMessage,
+    markMessageAsRead: markChatMessageAsRead,
+    markConversationAsRead: markChatConversationAsRead,
+    getUnreadCount: fetchUnreadChatCount,
+    uploadImage: uploadChatImage,
   },
 };
 

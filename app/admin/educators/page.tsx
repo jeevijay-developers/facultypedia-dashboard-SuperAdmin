@@ -1,12 +1,55 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DataTable } from "@/components/admin/data-table";
 import { Pagination } from "@/components/admin/pagination";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Eye, MoreHorizontal, RefreshCw, X } from "lucide-react";
+import { Eye, MoreHorizontal, RefreshCw, X, Send, Loader2 } from "lucide-react";
 import adminAPI from "@/util/server";
+import { io, Socket } from "socket.io-client";
+import { getAdminAccessToken } from "@/util/server";
+
+type Participant = {
+  userId:
+    | string
+    | {
+        _id: string;
+        fullName?: string;
+        email?: string;
+        profilePicture?: string;
+        image?: string;
+      };
+  userType: "Admin" | "Educator";
+};
+
+type Conversation = {
+  _id: string;
+  participants: Participant[];
+  lastMessage?: {
+    content?: string;
+    messageType?: string;
+    createdAt?: string;
+  };
+  lastMessageAt?: string;
+  unreadCount?: number;
+};
+
+type ChatMessage = {
+  _id: string;
+  content: string;
+  messageType: "text" | "image" | "file";
+  attachments?: { url: string; type?: string; filename?: string }[];
+  conversationId: string;
+  sender: { userId: string | { _id: string }; userType: "Admin" | "Educator" };
+  receiver: {
+    userId: string | { _id: string };
+    userType: "Admin" | "Educator";
+  };
+  createdAt: string;
+  isRead?: boolean;
+  readAt?: string;
+};
 
 type TableEducator = {
   id: string;
@@ -39,6 +82,20 @@ export default function EducatorsPage() {
   const [selectedEducator, setSelectedEducator] =
     useState<TableEducator | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatConversations, setChatConversations] = useState<Conversation[]>(
+    []
+  );
+  const [selectedConversationId, setSelectedConversationId] = useState<
+    string | null
+  >(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatMessagesLoading, setChatMessagesLoading] = useState(false);
+  const [chatSending, setChatSending] = useState(false);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const socketRef = useRef<Socket | null>(null);
   const [specializationFilter, setSpecializationFilter] = useState<string>("");
   const [ratingFilter, setRatingFilter] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
@@ -270,6 +327,283 @@ export default function EducatorsPage() {
     setPage(nextPage);
   };
 
+  const resolveId = (value: string | { _id?: string }) =>
+    typeof value === "string" ? value : value?._id || "";
+
+  const getOtherParticipant = useCallback(
+    (conversation: Conversation | undefined) => {
+      if (!conversation) return null;
+      return (
+        conversation.participants.find((p) => p.userType === "Educator") || null
+      );
+    },
+    []
+  );
+
+  const updateConversationUnread = useCallback(
+    (conversationId: string, unreadCount: number) => {
+      setChatConversations((prev) =>
+        prev.map((conv) =>
+          conv._id === conversationId
+            ? { ...conv, unreadCount: Math.max(unreadCount, 0) }
+            : conv
+        )
+      );
+    },
+    []
+  );
+
+  const incrementConversationUnread = useCallback((conversationId: string) => {
+    setChatConversations((prev) =>
+      prev.map((conv) =>
+        conv._id === conversationId
+          ? { ...conv, unreadCount: (conv.unreadCount || 0) + 1 }
+          : conv
+      )
+    );
+  }, []);
+
+  const loadChatConversations = useCallback(async () => {
+    setChatLoading(true);
+    try {
+      const response = await adminAPI.chat.listConversations();
+      const payload = response?.data ?? response;
+      const conversations = payload?.conversations ?? payload ?? [];
+      setChatConversations(conversations);
+
+      if (conversations.length === 0) {
+        setSelectedConversationId(null);
+        setChatMessages([]);
+      } else if (
+        selectedConversationId &&
+        !conversations.some(
+          (c: Conversation) => c._id === selectedConversationId
+        )
+      ) {
+        setSelectedConversationId(conversations[0]._id);
+      } else if (!selectedConversationId) {
+        setSelectedConversationId(conversations[0]._id);
+      }
+    } catch (err) {
+      console.error("Failed to load conversations", err);
+    } finally {
+      setChatLoading(false);
+    }
+  }, [selectedConversationId]);
+
+  const loadChatMessages = useCallback(
+    async (conversationId: string | null) => {
+      if (!conversationId) {
+        setChatMessages([]);
+        return;
+      }
+      setChatMessagesLoading(true);
+      try {
+        const response = await adminAPI.chat.listMessages(
+          conversationId,
+          1,
+          100
+        );
+        const payload = response?.data ?? response;
+        const messages = payload?.messages ?? payload?.data?.messages ?? [];
+        setChatMessages(messages);
+
+        const unreadForAdmin = messages.filter(
+          (msg: ChatMessage) =>
+            msg.receiver?.userType === "Admin" && !msg.isRead
+        );
+
+        if (unreadForAdmin.length > 0) {
+          try {
+            await adminAPI.chat.markConversationAsRead(conversationId);
+          } catch (err) {
+            console.error("Failed to mark conversation as read", err);
+          }
+
+          const readAt = new Date().toISOString();
+          setChatMessages((prev) =>
+            prev.map((msg) =>
+              msg.receiver?.userType === "Admin"
+                ? { ...msg, isRead: true, readAt: msg.readAt || readAt }
+                : msg
+            )
+          );
+        }
+
+        updateConversationUnread(conversationId, 0);
+      } catch (err) {
+        console.error("Failed to load chat messages", err);
+      } finally {
+        setChatMessagesLoading(false);
+      }
+    },
+    [updateConversationUnread]
+  );
+
+  useEffect(() => {
+    if (isChatOpen) {
+      void loadChatConversations();
+    }
+  }, [isChatOpen, loadChatConversations]);
+
+  useEffect(() => {
+    if (!isChatOpen) return;
+    void loadChatMessages(selectedConversationId);
+  }, [isChatOpen, selectedConversationId, loadChatMessages]);
+
+  useEffect(() => {
+    if (!isChatOpen) return;
+
+    const token = getAdminAccessToken();
+    if (!token) return;
+
+    const baseUrl =
+      process.env.NEXT_PUBLIC_API_URL ||
+      process.env.NEXT_PUBLIC_BASE_URL ||
+      "http://localhost:5000";
+
+    const socket = io(`${baseUrl}/admin-educator-chat`, {
+      transports: ["websocket"],
+      auth: { token },
+    });
+
+    socket.on("new_message", ({ message }) => {
+      if (!message) return;
+      setChatMessages((prev) =>
+        prev.some((m) => m._id === message._id) ? prev : [...prev, message]
+      );
+      setChatConversations((prev) => {
+        const updated = prev.map((c) =>
+          c._id === message.conversationId
+            ? { ...c, lastMessage: message, lastMessageAt: message.createdAt }
+            : c
+        );
+        return updated;
+      });
+
+      const isActive = selectedConversationId === message.conversationId;
+      const isForAdmin = message.receiver?.userType === "Admin";
+
+      if (isActive && isForAdmin) {
+        void adminAPI.chat
+          .markMessageAsRead(message._id)
+          .catch((err) => console.error("Failed to mark message read", err));
+
+        setChatMessages((prev) =>
+          prev.map((m) =>
+            m._id === message._id
+              ? { ...m, isRead: true, readAt: new Date().toISOString() }
+              : m
+          )
+        );
+      } else if (!isActive && isForAdmin) {
+        incrementConversationUnread(message.conversationId);
+      }
+    });
+
+    socket.on("message_sent", ({ message }) => {
+      if (message?.conversationId === selectedConversationId) {
+        setChatMessages((prev) =>
+          prev.some((m) => m._id === message._id) ? prev : [...prev, message]
+        );
+      }
+    });
+
+    socketRef.current = socket;
+
+    return () => {
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, [incrementConversationUnread, isChatOpen, selectedConversationId]);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [chatMessages]);
+
+  const selectedConversation = useMemo(
+    () =>
+      chatConversations.find((c) => c._id === selectedConversationId) || null,
+    [chatConversations, selectedConversationId]
+  );
+
+  const chatPartner = useMemo(
+    () => getOtherParticipant(selectedConversation ?? undefined),
+    [getOtherParticipant, selectedConversation]
+  );
+
+  const handleSendMessage = async () => {
+    if (!selectedConversation || !chatPartner) return;
+    const receiverId = resolveId(chatPartner.userId);
+    if (!receiverId) return;
+    const content = chatInput.trim();
+    if (!content) return;
+
+    setChatSending(true);
+    try {
+      if (socketRef.current?.connected) {
+        socketRef.current.emit("send_message", {
+          conversationId: selectedConversation._id,
+          receiverId,
+          receiverType: "Educator",
+          content,
+          messageType: "text",
+          attachments: [],
+        });
+      } else {
+        const response = await adminAPI.chat.sendMessage({
+          conversationId: selectedConversation._id,
+          receiverId,
+          receiverType: "Educator",
+          content,
+          messageType: "text",
+          attachments: [],
+        });
+        const message = response?.message || response?.data?.message;
+        if (message) {
+          setChatMessages((prev) => [...prev, message]);
+        }
+      }
+      setChatInput("");
+    } catch (err) {
+      console.error("Failed to send message", err);
+    } finally {
+      setChatSending(false);
+    }
+  };
+
+  const formattedTime = (value?: string) => {
+    if (!value) return "";
+    return new Date(value).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  const sortedChatMessages = useMemo(
+    () =>
+      [...chatMessages].sort(
+        (a, b) =>
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      ),
+    [chatMessages]
+  );
+
+  const resolveParticipantName = (participant: Participant | null) => {
+    if (!participant) return "Educator";
+    if (typeof participant.userId === "object") {
+      return (
+        participant.userId.fullName ||
+        participant.userId.email ||
+        participant.userId._id ||
+        "Educator"
+      );
+    }
+    return participant.userId;
+  };
+
   return (
     <div className="p-8">
       <div className="mb-8">
@@ -291,6 +625,13 @@ export default function EducatorsPage() {
           />
         </div>
         <div className="relative flex items-center gap-3">
+          <Button
+            type="button"
+            className="bg-[#AD49E1] text-white hover:bg-[#932ccc]"
+            onClick={() => setIsChatOpen(true)}
+          >
+            Chat
+          </Button>
           <Button
             type="button"
             variant="outline"
@@ -527,6 +868,254 @@ export default function EducatorsPage() {
                 Close
               </Button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {isChatOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setIsChatOpen(false)}
+        >
+          <div
+            className="flex h-[650px] w-full max-w-6xl overflow-hidden rounded-3xl bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            {/* Sidebar */}
+            <aside className="w-[280px] flex-shrink-0 border-r border-gray-100 bg-white flex flex-col">
+              <div className="px-6 pb-3 pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-900">
+                      Educators
+                    </h2>
+                    <p className="text-xs text-gray-500">
+                      Recent conversations
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="text-gray-400 hover:text-gray-600"
+                    aria-label="Close chat"
+                    onClick={() => setIsChatOpen(false)}
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-2">
+                {chatLoading ? (
+                  <div className="flex h-full items-center justify-center text-sm text-gray-500">
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading...
+                  </div>
+                ) : chatConversations.length === 0 ? (
+                  <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-gray-200 bg-gray-50 text-sm text-gray-500 px-3 py-4">
+                    No educator messages yet.
+                  </div>
+                ) : (
+                  chatConversations.map((conversation) => {
+                    const partner = getOtherParticipant(conversation);
+                    const name = resolveParticipantName(partner);
+                    const isActive =
+                      selectedConversationId === conversation._id;
+                    const lastText = conversation.lastMessage?.content || "";
+                    const timeLabel = formattedTime(
+                      conversation.lastMessage?.createdAt ||
+                        conversation.lastMessageAt
+                    );
+
+                    return (
+                      <button
+                        key={conversation._id}
+                        type="button"
+                        onClick={() => {
+                          updateConversationUnread(conversation._id, 0);
+                          setSelectedConversationId(conversation._id);
+                        }}
+                        className={`w-full rounded-xl border border-transparent p-3 text-left transition-colors ${
+                          isActive
+                            ? "bg-purple-50 border-purple-100"
+                            : "hover:bg-gray-50"
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="relative mt-0.5 h-10 w-10 rounded-full bg-gradient-to-br from-purple-500 to-fuchsia-500 text-white flex items-center justify-center text-sm font-semibold">
+                            {name.slice(0, 2).toUpperCase()}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="truncate text-sm font-semibold text-gray-900">
+                                {name}
+                              </p>
+                              <span className="text-[11px] text-gray-400">
+                                {timeLabel}
+                              </span>
+                            </div>
+                            <p className="truncate text-xs text-gray-500">
+                              {lastText}
+                            </p>
+                            {conversation.unreadCount ? (
+                              <span className="mt-1 inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-[11px] font-semibold text-purple-700">
+                                {conversation.unreadCount} new
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </aside>
+
+            {/* Chat area */}
+            <section className="flex min-w-0 flex-1 flex-col bg-white">
+              <header className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+                <div className="flex items-center gap-3">
+                  <div className="relative h-10 w-10 rounded-full bg-gradient-to-br from-purple-500 to-fuchsia-500 text-white flex items-center justify-center text-sm font-semibold">
+                    {chatPartner
+                      ? resolveParticipantName(chatPartner)
+                          .slice(0, 2)
+                          .toUpperCase()
+                      : "--"}
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-gray-900 leading-tight">
+                      {chatPartner
+                        ? resolveParticipantName(chatPartner)
+                        : "No conversation"}
+                    </h3>
+                    <p className="text-xs text-gray-500">
+                      Real-time chat with educators
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 text-gray-400">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setIsChatOpen(false)}
+                    aria-label="Close chat"
+                  >
+                    <X className="h-5 w-5" />
+                  </Button>
+                </div>
+              </header>
+
+              <div className="flex-1 bg-white p-6 pb-4">
+                <div
+                  ref={scrollRef}
+                  className="flex h-full flex-col gap-4 overflow-y-auto rounded-2xl bg-gray-50 px-4 py-4"
+                >
+                  {chatMessagesLoading ? (
+                    <div className="flex h-full items-center justify-center text-sm text-gray-500">
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading
+                      messages...
+                    </div>
+                  ) : !selectedConversationId ? (
+                    <div className="flex h-full items-center justify-center text-sm text-gray-500">
+                      Select an educator to start chatting.
+                    </div>
+                  ) : sortedChatMessages.length === 0 ? (
+                    <div className="flex h-full items-center justify-center text-sm text-gray-500">
+                      No messages yet.
+                    </div>
+                  ) : (
+                    sortedChatMessages.map((message) => {
+                      const isMine = message.sender.userType === "Admin";
+                      const bubbleColor = isMine
+                        ? "bg-gradient-to-br from-purple-600 to-fuchsia-600 text-white"
+                        : "bg-white text-gray-800 border border-gray-200";
+                      return (
+                        <div
+                          key={message._id}
+                          className={`flex ${
+                            isMine ? "justify-end" : "justify-start"
+                          }`}
+                        >
+                          <div
+                            className={`max-w-[70%] rounded-2xl px-4 py-3 text-sm shadow-sm ${
+                              isMine ? "rounded-br-none" : "rounded-bl-none"
+                            } ${bubbleColor}`}
+                          >
+                            {message.messageType === "image" &&
+                            message.attachments?.[0]?.url ? (
+                              <a
+                                href={message.attachments[0].url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="mb-2 block overflow-hidden rounded-lg"
+                              >
+                                <img
+                                  src={message.attachments[0].url}
+                                  alt={
+                                    message.attachments[0].filename || "Image"
+                                  }
+                                  className="max-h-64 w-full object-cover"
+                                />
+                              </a>
+                            ) : null}
+                            <p className="whitespace-pre-wrap break-words leading-relaxed">
+                              {message.content}
+                            </p>
+                            <span
+                              className={`mt-2 block text-[11px] ${
+                                isMine ? "text-white/80" : "text-gray-500"
+                              }`}
+                            >
+                              {formattedTime(message.createdAt)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              <footer className="border-t border-gray-100 bg-white px-6 py-4">
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void handleSendMessage();
+                  }}
+                  className="flex items-center gap-3"
+                >
+                  <div className="flex-1">
+                    <Input
+                      placeholder="Type a message..."
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      disabled={!selectedConversationId || chatSending}
+                      className="w-full rounded-full bg-gray-50 border-gray-200"
+                    />
+                  </div>
+                  <Button
+                    type="submit"
+                    className="gap-2 rounded-full bg-purple-600 px-5 text-white hover:bg-purple-700"
+                    disabled={
+                      !selectedConversationId ||
+                      chatSending ||
+                      !chatInput.trim()
+                    }
+                  >
+                    {chatSending ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" /> Sending
+                      </>
+                    ) : (
+                      <>
+                        <Send className="h-4 w-4" /> Send
+                      </>
+                    )}
+                  </Button>
+                </form>
+              </footer>
+            </section>
           </div>
         </div>
       )}

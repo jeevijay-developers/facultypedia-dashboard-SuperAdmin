@@ -1,7 +1,7 @@
-"use client"
+"use client";
 
-import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   Users,
@@ -11,10 +11,10 @@ import {
   Video,
   BarChart3,
   LogOut,
-} from "lucide-react"
-import { Button } from "@/components/ui/button"
-import Image from "next/image"
-import adminAPI from "@/util/server"
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import Image from "next/image";
+import adminAPI from "@/util/server";
 
 const navItems = [
   { href: "/admin", icon: LayoutDashboard, label: "Dashboard" },
@@ -27,11 +27,11 @@ const navItems = [
   { href: "/admin/live-classes", icon: Video, label: "Live Classes" },
   { href: "/admin/revenue", icon: BarChart3, label: "Revenue & Payments" },
   // { href: "/admin/settings", icon: Settings, label: "Settings" },
-]
+];
 
 export function Sidebar() {
-  const pathname = usePathname()
-  const router = useRouter()
+  const pathname = usePathname();
+  const router = useRouter();
 
   const handleLogout = async () => {
     try {
@@ -59,7 +59,7 @@ export function Sidebar() {
           />
           <div>
             <h1 className="font-bold text-lg" style={{ color: "#2E073F" }}>
-              Faculty Pedia
+              Facultypedia
             </h1>
             <p className="text-xs text-gray-500">Super Admin</p>
           </div>
@@ -68,8 +68,9 @@ export function Sidebar() {
 
       <nav className="flex-1 p-4 space-y-1">
         {navItems.map((item) => {
-          const Icon = item.icon
-          const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
+          const Icon = item.icon;
+          const isActive =
+            pathname === item.href || pathname.startsWith(`${item.href}/`);
 
           return (
             <Link
@@ -84,17 +85,22 @@ export function Sidebar() {
               <Icon className="w-5 h-5" />
               <span>{item.label}</span>
             </Link>
-          )
+          );
         })}
       </nav>
 
       <div className="p-4 border-t border-gray-200">
         <div className="space-y-3">
-          <div className="px-4 py-3 rounded-lg" style={{ backgroundColor: "#F5F0FA" }}>
+          <div
+            className="px-4 py-3 rounded-lg"
+            style={{ backgroundColor: "#F5F0FA" }}
+          >
             <p className="text-xs font-medium" style={{ color: "#2E073F" }}>
               Need help?
             </p>
-            <p className="text-xs text-gray-600 mt-1">Contact support for assistance</p>
+            <p className="text-xs text-gray-600 mt-1">
+              Contact support for assistance
+            </p>
           </div>
 
           <Button
@@ -109,5 +115,5 @@ export function Sidebar() {
         </div>
       </div>
     </aside>
-  )
+  );
 }

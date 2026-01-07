@@ -11,6 +11,7 @@ import {
   Video,
   BarChart3,
   LogOut,
+  Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Image from "next/image";
@@ -26,6 +27,7 @@ const navItems = [
   { href: "/admin/webinars", icon: Video, label: "Webinars" },
   { href: "/admin/live-classes", icon: Video, label: "Live Classes" },
   { href: "/admin/revenue", icon: BarChart3, label: "Revenue & Payments" },
+  { href: "/admin/payouts", icon: Wallet, label: "Payouts" },
   // { href: "/admin/settings", icon: Settings, label: "Settings" },
 ];
 

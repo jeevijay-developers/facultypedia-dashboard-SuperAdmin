@@ -44,9 +44,9 @@ export function DataTable<T extends { id: string | number }>({
       <table className="w-full">
         <thead>
           <tr className="bg-gray-50 border-b border-gray-200">
-            {columns.map((col) => (
+            {columns.map((col, i) => (
               <th
-                key={String(col.key)}
+                key={i}
                 className="px-6 py-3 text-left text-sm font-semibold text-gray-900"
               >
                 <button
@@ -98,17 +98,14 @@ export function DataTable<T extends { id: string | number }>({
               </td>
             </tr>
           ) : (
-            sortedData.map((row) => (
+            sortedData.map((row, i) => (
               <tr
-                key={row.id}
+                key={i}
                 className="border-b border-gray-200 hover:bg-gray-50 transition-colors cursor-pointer"
                 onClick={() => onRowClick?.(row)}
               >
-                {columns.map((col) => (
-                  <td
-                    key={String(col.key)}
-                    className="px-6 py-4 text-sm text-gray-900"
-                  >
+                {columns.map((col, i) => (
+                  <td key={i} className="px-6 py-4 text-sm text-gray-900">
                     {col.render
                       ? col.render(row[col.key], row)
                       : String(row[col.key])}

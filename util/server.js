@@ -774,6 +774,35 @@ export const uploadChatImage = async (file) => {
   return response?.data ?? response;
 };
 
+// Payout APIs
+export const getAllPayouts = async (params) => {
+  return request("/api/admin/payouts", {
+    method: "GET",
+    params,
+  });
+};
+
+export const calculatePayouts = async (month, year) => {
+  return request("/api/admin/payouts/calculate", {
+    method: "POST",
+    body: { month, year },
+  });
+};
+
+export const processPayout = async (payoutId) => {
+  return request("/api/admin/payouts/pay", {
+    method: "POST",
+    body: { payoutId },
+  });
+};
+
+export const listAdminPayments = async (params) => {
+  return request("/api/admin/payments", {
+    method: "GET",
+    params,
+  });
+};
+
 const adminAPI = {
   auth: {
     login: adminLogin,
@@ -830,6 +859,12 @@ const adminAPI = {
   },
   payments: {
     getStatus: fetchPaymentStatus,
+    list: listAdminPayments,
+  },
+  payouts: {
+    list: getAllPayouts,
+    calculate: calculatePayouts,
+    process: processPayout,
   },
   videos: {
     list: fetchVideos,

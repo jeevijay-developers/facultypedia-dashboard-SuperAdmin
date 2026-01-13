@@ -267,7 +267,7 @@ export default function EducatorsPage() {
     { key: "specialization" as const, label: "Specialization", sortable: true },
     { key: "rating" as const, label: "Rating", sortable: true },
     { key: "totalCourses" as const, label: "Courses", sortable: true },
-    { key: "totalStudents" as const, label: "Students", sortable: true },
+    { key: "totalStudents" as const, label: "Followers", sortable: true },
     {
       key: "status" as const,
       label: "Status",
@@ -831,7 +831,7 @@ export default function EducatorsPage() {
                 </div>
                 <div>
                   <p className="text-xs uppercase tracking-wide text-gray-500">
-                    Total Students
+                    Total Followers
                   </p>
                   <p className="mt-1 text-sm text-gray-900">
                     {selectedEducator.totalStudents}

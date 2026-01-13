@@ -204,7 +204,7 @@ export default function TestsPage() {
     { key: "duration" as const, label: "Duration (min)", sortable: true },
     { key: "marks" as const, label: "Marks", sortable: true },
     { key: "questions" as const, label: "Questions", sortable: true },
-    { key: "enrolled" as const, label: "Enrolled", sortable: true },
+   
     {
       key: "status" as const,
       label: "Status",

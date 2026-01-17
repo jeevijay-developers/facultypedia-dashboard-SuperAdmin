@@ -796,6 +796,27 @@ export const processPayout = async (payoutId) => {
   });
 };
 
+export const getMonthlySalesSummary = async (params) => {
+  return request("/api/admin/payouts/monthly-sales", {
+    method: "GET",
+    params,
+  });
+};
+
+export const processBulkPayouts = async (payoutIds, month, year) => {
+  const body = {};
+  if (payoutIds && Array.isArray(payoutIds) && payoutIds.length > 0) {
+    body.payoutIds = payoutIds;
+  } else if (month && year) {
+    body.month = month;
+    body.year = year;
+  }
+  return request("/api/admin/payouts/bulk-pay", {
+    method: "POST",
+    body,
+  });
+};
+
 export const listAdminPayments = async (params) => {
   return request("/api/admin/payments", {
     method: "GET",
@@ -865,6 +886,8 @@ const adminAPI = {
     list: getAllPayouts,
     calculate: calculatePayouts,
     process: processPayout,
+    monthlySales: getMonthlySalesSummary,
+    bulkPay: processBulkPayouts,
   },
   videos: {
     list: fetchVideos,

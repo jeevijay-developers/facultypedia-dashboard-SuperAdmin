@@ -62,6 +62,28 @@ const safeJSONParse = (value) => {
   }
 };
 
+// Auth expiration event system
+const authExpirationListeners = new Set();
+
+const notifyAuthExpired = () => {
+  authExpirationListeners.forEach((listener) => {
+    try {
+      listener();
+    } catch (error) {
+      console.warn("Auth expiration listener error:", error);
+    }
+  });
+};
+
+export const onAuthExpired = (callback) => {
+  if (typeof callback === "function") {
+    authExpirationListeners.add(callback);
+  }
+  return () => {
+    authExpirationListeners.delete(callback);
+  };
+};
+
 class APIError extends Error {
   constructor(message, { status = 0, payload = null } = {}) {
     super(message);
@@ -205,6 +227,7 @@ const request = async (path, options = {}) => {
 
       if (response.status === 401) {
         clearAdminSession();
+        notifyAuthExpired();
       }
 
       throw new APIError(message, { status: response.status, payload });

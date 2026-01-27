@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { KPICard } from "@/components/admin/kpi-card";
 import {
   LineChart,
@@ -82,7 +81,6 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function DashboardPage() {
-  const router = useRouter();
   const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -101,12 +99,9 @@ export default function DashboardPage() {
       });
       setAnalytics(data);
     } catch (err) {
+      // 401 errors are handled globally by AuthGuard
       const status = (err as { status?: number })?.status;
-
-      if (status === 401) {
-        adminAPI.auth.clearSession();
-        router.replace("/login");
-      } else {
+      if (status !== 401) {
         const message =
           err instanceof Error ? err.message : "Failed to load analytics";
         setError(message);
@@ -114,7 +109,7 @@ export default function DashboardPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [activityRange, router]);
+  }, [activityRange]);
 
   const loadRecentTransactions = useCallback(async () => {
     setIsTxLoading(true);
@@ -129,12 +124,9 @@ export default function DashboardPage() {
       const txData = response?.data ?? response ?? {};
       setTransactions(txData.transactions ?? []);
     } catch (err) {
+      // 401 errors are handled globally by AuthGuard
       const status = (err as { status?: number })?.status;
-
-      if (status === 401) {
-        adminAPI.auth.clearSession();
-        router.replace("/login");
-      } else {
+      if (status !== 401) {
         const message =
           err instanceof Error ? err.message : "Failed to load transactions";
         setTxError(message);
@@ -142,7 +134,7 @@ export default function DashboardPage() {
     } finally {
       setIsTxLoading(false);
     }
-  }, [router]);
+  }, []);
 
   useEffect(() => {
     void loadAnalytics();

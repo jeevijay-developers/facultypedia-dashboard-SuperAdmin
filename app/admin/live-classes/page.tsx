@@ -137,19 +137,13 @@ export default function LiveClassesPage() {
           response?.pagination ?? response?.data?.pagination ?? null
         );
       } catch (err) {
+        // 401 errors are handled globally by AuthGuard
         const status = (err as { status?: number })?.status;
-
-        if (status === 401) {
-          adminAPI.auth.clearSession();
-          setError(
-            "Automatic super-admin authentication failed. Confirm the configured credentials or run the super admin seeder."
-          );
-          return;
+        if (status !== 401) {
+          const message =
+            err instanceof Error ? err.message : "Failed to load live classes";
+          setError(message);
         }
-
-        const message =
-          err instanceof Error ? err.message : "Failed to load live classes";
-        setError(message);
       } finally {
         setIsLoading(false);
       }

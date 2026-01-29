@@ -869,11 +869,11 @@ export default function EducatorsPage() {
           onClick={() => setIsChatOpen(false)}
         >
           <div
-            className="flex h-[650px] w-full max-w-6xl overflow-hidden rounded-3xl bg-white shadow-2xl"
+            className="flex h-162.5 w-full max-w-6xl overflow-hidden rounded-3xl bg-white shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
             {/* Sidebar */}
-            <aside className="w-[280px] flex-shrink-0 border-r border-gray-100 bg-white flex flex-col">
+            <aside className="w-70 shrink-0 border-r border-gray-100 bg-white flex flex-col">
               <div className="px-6 pb-3 pt-6">
                 <div className="flex items-center justify-between">
                   <div>
@@ -931,7 +931,7 @@ export default function EducatorsPage() {
                         }`}
                       >
                         <div className="flex items-start gap-3">
-                          <div className="relative mt-0.5 h-10 w-10 rounded-full bg-gradient-to-br from-purple-500 to-fuchsia-500 text-white flex items-center justify-center text-sm font-semibold">
+                          <div className="relative mt-0.5 h-10 w-10 rounded-full bg-linear-to-br from-purple-500 to-fuchsia-500 text-white flex items-center justify-center text-sm font-semibold">
                             {name.slice(0, 2).toUpperCase()}
                           </div>
                           <div className="min-w-0 flex-1">
@@ -964,7 +964,7 @@ export default function EducatorsPage() {
             <section className="flex min-w-0 flex-1 flex-col bg-white">
               <header className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
                 <div className="flex items-center gap-3">
-                  <div className="relative h-10 w-10 rounded-full bg-gradient-to-br from-purple-500 to-fuchsia-500 text-white flex items-center justify-center text-sm font-semibold">
+                  <div className="relative h-10 w-10 rounded-full bg-linear-to-br from-purple-500 to-fuchsia-500 text-white flex items-center justify-center text-sm font-semibold">
                     {chatPartner
                       ? resolveParticipantName(chatPartner)
                           .slice(0, 2)
@@ -1048,7 +1048,7 @@ export default function EducatorsPage() {
                                 />
                               </a>
                             ) : null}
-                            <p className="whitespace-pre-wrap break-words leading-relaxed">
+                            <p className="whitespace-pre-wrap wrap-break-word leading-relaxed">
                               {message.content}
                             </p>
                             <span

@@ -344,7 +344,7 @@ export default function RevenuePage() {
                   border: "1px solid #f0f0f0",
                   borderRadius: "8px",
                 }}
-                formatter={(value: number) => formatAmount(value)}
+                formatter={(value: number | undefined) => formatAmount(value ?? 0)}
               />
               <Line
                 type="monotone"
@@ -375,7 +375,7 @@ export default function RevenuePage() {
                   border: "1px solid #f0f0f0",
                   borderRadius: "8px",
                 }}
-                formatter={(value: number) => formatAmount(value)}
+                formatter={(value: number | undefined) => formatAmount(value ?? 0)}
               />
               <Bar dataKey="value" fill="#AD49E1" />
             </BarChart>
@@ -435,7 +435,7 @@ export default function RevenuePage() {
                   />
                 ))}
               </Pie>
-              <Tooltip formatter={(value: number) => formatAmount(value)} />
+              <Tooltip formatter={(value: number | undefined) => formatAmount(value ?? 0)} />
             </PieChart>
           </ResponsiveContainer>
         </div>

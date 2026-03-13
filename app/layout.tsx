@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   description: "Super Admin Dashboard for Facultypedia Ed-tech Platform",
   generator: "v0.app",
   icons: {
-    icon: "/finalLogo.PNG",
+    icon: "/finalLogo.png",
     apple: "/apple-icon.png",
   },
 };

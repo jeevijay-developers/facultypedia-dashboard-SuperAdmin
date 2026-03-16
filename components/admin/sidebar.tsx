@@ -54,7 +54,7 @@ export function Sidebar() {
       <div className="p-6 border-b border-gray-200">
         <div className="flex items-center gap-2">
           <Image
-            src="/icon-dark-32x32.png"
+            src="/logo.png"
             alt="Facultypedia Logo"
             width={40}
             height={40}

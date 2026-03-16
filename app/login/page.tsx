@@ -58,7 +58,7 @@ export default function SuperAdminLoginPage() {
         >
           <div className="relative h-16 w-16">
             <Image
-              src="/icon-dark-32x32.png"
+              src="/logo.png"
               alt="Facultypedia Logo"
               width={64}
               height={64}

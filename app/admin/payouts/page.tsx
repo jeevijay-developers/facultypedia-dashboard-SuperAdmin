@@ -240,7 +240,7 @@ export default function PayoutsPage() {
       render: (val: any) => (
         <span
           className={`px-2 py-1 rounded-full text-xs font-medium ${
-            val === "paid"
+            val === "paid" || val === "processed"
               ? "bg-green-100 text-green-800"
               : val === "pending"
               ? "bg-yellow-100 text-yellow-800"
@@ -352,7 +352,7 @@ export default function PayoutsPage() {
       render: (val: any) => (
         <span
           className={`px-2 py-1 rounded-full text-xs font-medium ${
-            val === "paid"
+            val === "paid" || val === "processed"
               ? "bg-green-100 text-green-800"
               : val === "pending"
               ? "bg-yellow-100 text-yellow-800"

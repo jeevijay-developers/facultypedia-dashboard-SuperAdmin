@@ -11,6 +11,7 @@ import adminAPI from "@/util/server";
 type TableTest = {
   id: string;
   title: string;
+  educatorName: string;
   subject: string;
   duration: number;
   marks: number;
@@ -93,6 +94,7 @@ export default function TestsPage() {
     return {
       id: String(id),
       title: test?.title || "Untitled test",
+      educatorName: test?.educatorName || "—",
       subject,
       duration: durationMinutes,
       marks,
@@ -164,7 +166,7 @@ export default function TestsPage() {
 
     return tests.filter((test) => {
       const matchesSearch = query
-        ? [test.title, test.subject]
+        ? [test.title, test.subject, test.educatorName]
             .filter(Boolean)
             .some((value) => value.toLowerCase().includes(query))
         : true;
@@ -194,6 +196,7 @@ export default function TestsPage() {
 
   const columns = [
     { key: "title" as const, label: "Title", sortable: true },
+    { key: "educatorName" as const, label: "Educator", sortable: true },
     { key: "subject" as const, label: "Subject", sortable: true },
     { key: "duration" as const, label: "Duration (min)", sortable: true },
     { key: "marks" as const, label: "Marks", sortable: true },
@@ -395,6 +398,10 @@ export default function TestsPage() {
               <div>
                 <p className="text-xs uppercase tracking-wide text-gray-500">Title</p>
                 <p className="mt-1 text-base font-medium text-gray-900">{selectedTest.title}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500">Educator</p>
+                <p className="mt-1 text-sm text-gray-900">{selectedTest.educatorName}</p>
               </div>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>

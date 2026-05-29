@@ -5,7 +5,7 @@ import { DataTable } from "@/components/admin/data-table";
 import { Pagination } from "@/components/admin/pagination";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Eye, RefreshCw, X } from "lucide-react";
+import { Eye, Pencil, Trash2, RefreshCw, X, Loader2, AlertTriangle } from "lucide-react";
 import adminAPI from "@/util/server";
 
 type TableLiveClass = {
@@ -48,52 +48,26 @@ export default function LiveClassesPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedClass, setSelectedClass] = useState<TableLiveClass | null>(null);
+  const [editingClass, setEditingClass] = useState<TableLiveClass | null>(null);
+  const [editForm, setEditForm] = useState<Partial<TableLiveClass & { subjectList: string[] }>>({});
+  const [editSaving, setEditSaving] = useState(false);
+  const [deletingClass, setDeletingClass] = useState<TableLiveClass | null>(null);
+  const [deleteConfirming, setDeleteConfirming] = useState(false);
+  const [statusUpdating, setStatusUpdating] = useState<Record<string, boolean>>({});
   const PAGE_SIZE = 10;
 
   const normalizeLiveClass = useCallback((item: any): TableLiveClass | null => {
     const id = item?.id ?? item?._id;
     if (!id) return null;
 
-    const subjectList = Array.isArray(item?.subject)
-      ? item.subject.filter(Boolean)
-      : item?.subject
-      ? [item.subject]
-      : [];
-
-    const educatorName =
-      item?.educatorName ||
-      item?.educator ||
-      item?.educatorID?.name ||
-      item?.educatorID?.fullName ||
-      item?.educatorID?.username ||
-      "Unknown";
-
-    const enrolledCount = Array.isArray(item?.enrolledStudents)
-      ? item.enrolledStudents.length
-      : Number.isFinite(Number(item?.enrolled))
-      ? Number(item.enrolled)
-      : 0;
-
-    const capacity = Number.isFinite(Number(item?.maxStudents))
-      ? Number(item.maxStudents)
-      : Number.isFinite(Number(item?.capacity))
-      ? Number(item.capacity)
-      : 0;
-
+    const subjectList = Array.isArray(item?.subject) ? item.subject.filter(Boolean) : item?.subject ? [item.subject] : [];
+    const educatorName = item?.educatorName || item?.educator || item?.educatorID?.name || item?.educatorID?.fullName || item?.educatorID?.username || "Unknown";
+    const enrolledCount = Array.isArray(item?.enrolledStudents) ? item.enrolledStudents.length : Number.isFinite(Number(item?.enrolled)) ? Number(item.enrolled) : 0;
+    const capacity = Number.isFinite(Number(item?.maxStudents)) ? Number(item.maxStudents) : Number.isFinite(Number(item?.capacity)) ? Number(item.capacity) : 0;
     const classDate = item?.classTiming || item?.createdAt || null;
     const classDateObj = classDate ? new Date(classDate) : null;
-    const isPast =
-      classDateObj &&
-      !Number.isNaN(classDateObj.getTime()) &&
-      classDateObj < new Date();
-
-    const status = item?.isCompleted
-      ? "completed"
-      : isPast
-      ? "completed"
-      : item?.isActive === false
-      ? "inactive"
-      : "upcoming";
+    const isPast = classDateObj && !Number.isNaN(classDateObj.getTime()) && classDateObj < new Date();
+    const status = item?.isCompleted ? "completed" : isPast ? "completed" : item?.isActive === false ? "inactive" : "upcoming";
 
     return {
       id: String(id),
@@ -101,74 +75,108 @@ export default function LiveClassesPage() {
       educatorName,
       subject: subjectList.length ? subjectList.join(", ") : "—",
       date: item?.classTiming || item?.createdAt || null,
-      duration: Number.isFinite(Number(item?.classDuration))
-        ? Number(item.classDuration)
-        : 0,
+      duration: Number.isFinite(Number(item?.classDuration)) ? Number(item.classDuration) : 0,
       capacity,
       enrolled: enrolledCount,
       status,
     };
   }, []);
 
-  const loadLiveClasses = useCallback(
-    async (targetPage = page) => {
-      setIsLoading(true);
-      setError(null);
+  const loadLiveClasses = useCallback(async (targetPage = page) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await adminAPI.liveClasses.list({ page: targetPage, limit: PAGE_SIZE });
+      const raw = response?.liveClasses ?? response?.data?.liveClasses ?? response ?? [];
+      const mapped = Array.isArray(raw)
+        ? raw.map(normalizeLiveClass).filter((item): item is TableLiveClass => Boolean(item))
+        : [];
+      setClasses(mapped);
+      setPagination(response?.pagination ?? response?.data?.pagination ?? null);
+    } catch (err) {
+      const status = (err as { status?: number })?.status;
+      if (status !== 401) setError(err instanceof Error ? err.message : "Failed to load live classes");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [normalizeLiveClass, page, PAGE_SIZE]);
 
-      try {
-        const response = await adminAPI.liveClasses.list({
-          page: targetPage,
-          limit: PAGE_SIZE,
-        });
-        const raw =
-          response?.liveClasses ??
-          response?.data?.liveClasses ??
-          response ??
-          [];
-
-        const mapped = Array.isArray(raw)
-          ? raw
-              .map(normalizeLiveClass)
-              .filter((item): item is TableLiveClass => Boolean(item))
-          : [];
-
-        setClasses(mapped);
-        setPagination(
-          response?.pagination ?? response?.data?.pagination ?? null
-        );
-      } catch (err) {
-        // 401 errors are handled globally by AuthGuard
-        const status = (err as { status?: number })?.status;
-        if (status !== 401) {
-          const message =
-            err instanceof Error ? err.message : "Failed to load live classes";
-          setError(message);
-        }
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [normalizeLiveClass, page, PAGE_SIZE]
-  );
-
-  useEffect(() => {
-    void loadLiveClasses(page);
-  }, [loadLiveClasses, page]);
+  useEffect(() => { void loadLiveClasses(page); }, [loadLiveClasses, page]);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchInput), 300);
     return () => clearTimeout(timer);
   }, [searchInput]);
 
+  const toggleClassStatus = useCallback(async (row: TableLiveClass) => {
+    const nextStatus = row.status === "upcoming" ? "inactive" : "upcoming";
+    setStatusUpdating((prev) => ({ ...prev, [row.id]: true }));
+    setClasses((prev) => prev.map((c) => c.id === row.id ? { ...c, status: nextStatus } : c));
+    try {
+      await adminAPI.liveClasses.updateStatus(row.id, nextStatus);
+    } catch (err) {
+      setClasses((prev) => prev.map((c) => c.id === row.id ? { ...c, status: row.status } : c));
+      setError(err instanceof Error ? err.message : "Failed to update live class status");
+    } finally {
+      setStatusUpdating((prev) => ({ ...prev, [row.id]: false }));
+    }
+  }, []);
+
+  const openEditModal = (row: TableLiveClass) => {
+    setEditingClass(row);
+    setEditForm({ ...row, subjectList: row.subject.split(", ").filter(Boolean) });
+  };
+
+  const handleEditSave = async () => {
+    if (!editingClass) return;
+    setEditSaving(true);
+    try {
+      await adminAPI.liveClasses.update(editingClass.id, {
+        liveClassTitle: editForm.title,
+        classDuration: editForm.duration,
+        maxStudents: editForm.capacity,
+        subject: editForm.subjectList,
+        classTiming: editForm.date,
+      });
+      setClasses((prev) =>
+        prev.map((c) =>
+          c.id === editingClass.id
+            ? {
+                ...c,
+                title: editForm.title ?? c.title,
+                duration: editForm.duration ?? c.duration,
+                capacity: editForm.capacity ?? c.capacity,
+                subject: (editForm.subjectList ?? []).join(", ") || c.subject,
+                date: editForm.date ?? c.date,
+              }
+            : c
+        )
+      );
+      setEditingClass(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update live class");
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deletingClass) return;
+    setDeleteConfirming(true);
+    try {
+      await adminAPI.liveClasses.remove(deletingClass.id);
+      setClasses((prev) => prev.filter((c) => c.id !== deletingClass.id));
+      setDeletingClass(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete live class");
+    } finally {
+      setDeleteConfirming(false);
+    }
+  };
+
   const subjectOptions = useMemo(() => {
     const unique = new Set<string>();
-    classes.forEach((c) => {
-      c.subject
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean)
-        .forEach((s) => unique.add(s));
-    });
+    classes.forEach((c) => c.subject.split(",").map((s) => s.trim()).filter(Boolean).forEach((s) => unique.add(s)));
     return Array.from(unique);
   }, [classes]);
 
@@ -176,148 +184,76 @@ export default function LiveClassesPage() {
     const query = debouncedSearch.trim().toLowerCase();
     const minDuration = minDurationFilter ? Number(minDurationFilter) : null;
     const minCapacity = minCapacityFilter ? Number(minCapacityFilter) : null;
-
-    return classes.filter((liveClass) => {
-      const matchesSearch = query
-        ? [liveClass.title, liveClass.educatorName, liveClass.subject]
-            .filter(Boolean)
-            .some((value) => value.toLowerCase().includes(query))
-        : true;
-
-      const matchesSubject = subjectFilter
-        ? liveClass.subject
-            .split(",")
-            .map((s) => s.trim().toLowerCase())
-            .includes(subjectFilter.toLowerCase())
-        : true;
-
-      const matchesDuration =
-        minDuration !== null ? liveClass.duration >= minDuration : true;
-      const matchesCapacity =
-        minCapacity !== null ? liveClass.capacity >= minCapacity : true;
-
-      return (
-        matchesSearch && matchesSubject && matchesDuration && matchesCapacity
-      );
+    return classes.filter((lc) => {
+      const matchesSearch = query ? [lc.title, lc.educatorName, lc.subject].filter(Boolean).some((v) => v.toLowerCase().includes(query)) : true;
+      const matchesSubject = subjectFilter ? lc.subject.split(",").map((s) => s.trim().toLowerCase()).includes(subjectFilter.toLowerCase()) : true;
+      const matchesDuration = minDuration !== null ? lc.duration >= minDuration : true;
+      const matchesCapacity = minCapacity !== null ? lc.capacity >= minCapacity : true;
+      return matchesSearch && matchesSubject && matchesDuration && matchesCapacity;
     });
-  }, [
-    classes,
-    debouncedSearch,
-    subjectFilter,
-    minDurationFilter,
-    minCapacityFilter,
-  ]);
+  }, [classes, debouncedSearch, subjectFilter, minDurationFilter, minCapacityFilter]);
 
   const columns = [
     { key: "title" as const, label: "Title", sortable: true },
     { key: "educatorName" as const, label: "Educator", sortable: true },
     { key: "subject" as const, label: "Subject", sortable: true },
-    {
-      key: "date" as const,
-      label: "Date",
-      sortable: true,
-      render: (v: string | null) => formatDate(v ?? undefined),
-    },
+    { key: "date" as const, label: "Date", sortable: true, render: (v: string | null) => formatDate(v ?? undefined) },
     { key: "duration" as const, label: "Duration (min)", sortable: true },
     { key: "capacity" as const, label: "Capacity", sortable: true },
     { key: "enrolled" as const, label: "Enrolled", sortable: true },
     {
       key: "status" as const,
       label: "Status",
-      render: (status: string) => (
-        <span
-          className={`px-3 py-1 rounded-full text-xs font-medium ${
-            status === "completed"
-              ? "bg-gray-100 text-gray-800"
-              : status === "inactive"
-              ? "bg-red-100 text-red-800"
-              : "bg-blue-100 text-blue-800"
-          }`}
-        >
-          {status}
-        </span>
+      render: (status: string, row: TableLiveClass) => (
+        <div className="flex items-center gap-2">
+          <span className={`px-3 py-1 rounded-full text-xs font-medium ${status === "completed" ? "bg-gray-100 text-gray-800" : status === "inactive" ? "bg-red-100 text-red-800" : "bg-blue-100 text-blue-800"}`}>{status}</span>
+          {status !== "completed" && (
+            <button type="button" className="rounded border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60" onClick={(e) => { e.stopPropagation(); void toggleClassStatus(row); }} disabled={Boolean(statusUpdating[row.id])}>
+              {row.status === "upcoming" ? "Deactivate" : "Activate"}
+            </button>
+          )}
+        </div>
       ),
     },
     {
       key: "id" as const,
-      label: "View",
+      label: "Actions",
       render: (_value: string, row: TableLiveClass) => (
-        <div className="flex justify-end">
-          <button
-            type="button"
-            className="flex items-center gap-2 rounded border border-gray-200 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
-            onClick={(event) => {
-              event.stopPropagation();
-              setSelectedClass(row);
-            }}
-            aria-label="View live class"
-          >
-            <Eye className="w-4 h-4" />
-            View
-          </button>
+        <div className="flex items-center justify-end gap-2">
+          <button type="button" className="flex items-center gap-1 rounded border border-gray-200 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50" onClick={(e) => { e.stopPropagation(); setSelectedClass(row); }}><Eye className="w-3.5 h-3.5" /> View</button>
+          <button type="button" className="flex items-center gap-1 rounded border border-blue-200 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50" onClick={(e) => { e.stopPropagation(); openEditModal(row); }}><Pencil className="w-3.5 h-3.5" /> Edit</button>
+          <button type="button" className="flex items-center gap-1 rounded border border-red-200 px-2 py-1 text-xs text-red-700 hover:bg-red-50" onClick={(e) => { e.stopPropagation(); setDeletingClass(row); }}><Trash2 className="w-3.5 h-3.5" /> Delete</button>
         </div>
       ),
     },
   ] as const;
 
-  const handlePageChange = (nextPage: number) => {
-    setPage(nextPage);
-  };
-
   return (
     <div className="p-8">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold" style={{ color: "#2E073F" }}>
-          Live Classes Management
-        </h1>
+        <h1 className="text-3xl font-bold" style={{ color: "#2E073F" }}>Live Classes Management</h1>
         <p className="text-gray-600 mt-1">Manage all live classes</p>
       </div>
 
       <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
         <div className="flex-1 w-full">
-          <Input
-            placeholder="Search by title, educator, or subject..."
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            className="bg-white border-gray-200"
-          />
+          <Input placeholder="Search by title, educator, or subject..." value={searchInput} onChange={(e) => setSearchInput(e.target.value)} className="bg-white border-gray-200" />
         </div>
         <div className="relative flex items-center gap-2 md:justify-end">
-          <Button
-            type="button"
-            variant="outline"
-            className="flex items-center gap-2"
-            onClick={() => setShowFilters((prev) => !prev)}
-          >
-            Filter
-          </Button>
+          <Button type="button" variant="outline" onClick={() => setShowFilters((p) => !p)}>Filter</Button>
           {showFilters && (
             <div className="absolute right-24 top-12 z-20 w-80 rounded-md border border-gray-200 bg-white p-4 shadow-lg">
               <div className="space-y-3">
                 <div>
                   <p className="text-xs font-semibold text-gray-600">Subject</p>
-                  <select
-                    className="mt-1 w-full rounded-md border border-gray-200 p-2 text-sm"
-                    value={subjectFilter}
-                    onChange={(e) => setSubjectFilter(e.target.value)}
-                  >
+                  <select className="mt-1 w-full rounded-md border border-gray-200 p-2 text-sm" value={subjectFilter} onChange={(e) => setSubjectFilter(e.target.value)}>
                     <option value="">All</option>
-                    {subjectOptions.map((subj) => (
-                      <option key={subj} value={subj}>
-                        {subj}
-                      </option>
-                    ))}
+                    {subjectOptions.map((s) => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
                 <div>
-                  <p className="text-xs font-semibold text-gray-600">
-                    Min Duration (min)
-                  </p>
-                  <select
-                    className="mt-1 w-full rounded-md border border-gray-200 p-2 text-sm"
-                    value={minDurationFilter}
-                    onChange={(e) => setMinDurationFilter(e.target.value)}
-                  >
+                  <p className="text-xs font-semibold text-gray-600">Min Duration (min)</p>
+                  <select className="mt-1 w-full rounded-md border border-gray-200 p-2 text-sm" value={minDurationFilter} onChange={(e) => setMinDurationFilter(e.target.value)}>
                     <option value="">Any</option>
                     <option value="45">45+</option>
                     <option value="60">60+</option>
@@ -325,14 +261,8 @@ export default function LiveClassesPage() {
                   </select>
                 </div>
                 <div>
-                  <p className="text-xs font-semibold text-gray-600">
-                    Min Capacity
-                  </p>
-                  <select
-                    className="mt-1 w-full rounded-md border border-gray-200 p-2 text-sm"
-                    value={minCapacityFilter}
-                    onChange={(e) => setMinCapacityFilter(e.target.value)}
-                  >
+                  <p className="text-xs font-semibold text-gray-600">Min Capacity</p>
+                  <select className="mt-1 w-full rounded-md border border-gray-200 p-2 text-sm" value={minCapacityFilter} onChange={(e) => setMinCapacityFilter(e.target.value)}>
                     <option value="">Any</option>
                     <option value="50">50+</option>
                     <option value="100">100+</option>
@@ -340,153 +270,115 @@ export default function LiveClassesPage() {
                   </select>
                 </div>
                 <div className="flex justify-end gap-2">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setSubjectFilter("");
-                      setMinDurationFilter("");
-                      setMinCapacityFilter("");
-                    }}
-                  >
-                    Clear
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => setShowFilters(false)}
-                  >
-                    Apply
-                  </Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => { setSubjectFilter(""); setMinDurationFilter(""); setMinCapacityFilter(""); }}>Clear</Button>
+                  <Button type="button" size="sm" onClick={() => setShowFilters(false)}>Apply</Button>
                 </div>
               </div>
             </div>
           )}
-          <Button
-            type="button"
-            variant="outline"
-            className="flex items-center gap-2"
-            onClick={() => {
-              void loadLiveClasses(page);
-            }}
-            disabled={isLoading}
-          >
-            <RefreshCw
-              className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
-            />
-            Refresh
+          <Button type="button" variant="outline" className="flex items-center gap-2" onClick={() => void loadLiveClasses(page)} disabled={isLoading}>
+            <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} /> Refresh
           </Button>
         </div>
       </div>
 
-      {error ? (
-        <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-          {error}
-        </div>
-      ) : (
-        <DataTable
-          data={filteredClasses}
-          columns={columns}
-          isLoading={isLoading}
-        />
-      )}
+      {error && <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div>}
+      <DataTable data={filteredClasses} columns={columns as any} isLoading={isLoading} />
+      <Pagination currentPage={pagination?.currentPage ?? page} totalPages={pagination?.totalPages ?? 1} onPageChange={(p) => setPage(p)} isLoading={isLoading} />
+      {pagination && <p className="mt-3 text-sm text-gray-500">Showing {filteredClasses.length} of {pagination.totalLiveClasses} live classes</p>}
 
+      {/* View Modal */}
       {selectedClass && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
-          role="dialog"
-          aria-modal="true"
-          onClick={() => setSelectedClass(null)}
-        >
-          <div
-            className="w-full max-w-lg rounded-lg bg-white shadow-2xl"
-            onClick={(event) => event.stopPropagation()}
-          >
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" role="dialog" aria-modal="true" onClick={() => setSelectedClass(null)}>
+          <div className="w-full max-w-lg rounded-lg bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
               <h2 className="text-lg font-semibold text-gray-900">Live Class Details</h2>
-              <button
-                type="button"
-                className="rounded-full p-1 hover:bg-gray-100"
-                onClick={() => setSelectedClass(null)}
-                aria-label="Close details"
-              >
-                <X className="h-5 w-5 text-gray-500" />
-              </button>
+              <button type="button" className="rounded-full p-1 hover:bg-gray-100" onClick={() => setSelectedClass(null)}><X className="h-5 w-5 text-gray-500" /></button>
             </div>
-
             <div className="space-y-4 px-6 py-5 text-sm text-gray-700">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-gray-500">Title</p>
-                <p className="mt-1 text-base font-medium text-gray-900">{selectedClass.title}</p>
+              <div><p className="text-xs uppercase tracking-wide text-gray-500">Title</p><p className="mt-1 text-base font-medium text-gray-900">{selectedClass.title}</p></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><p className="text-xs uppercase tracking-wide text-gray-500">Educator</p><p className="mt-1 text-sm text-gray-900">{selectedClass.educatorName}</p></div>
+                <div><p className="text-xs uppercase tracking-wide text-gray-500">Subject</p><p className="mt-1 text-sm text-gray-900">{selectedClass.subject}</p></div>
               </div>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-gray-500">Educator</p>
-                  <p className="mt-1 text-sm text-gray-900">{selectedClass.educatorName}</p>
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-gray-500">Subject</p>
-                  <p className="mt-1 text-sm text-gray-900">{selectedClass.subject}</p>
-                </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><p className="text-xs uppercase tracking-wide text-gray-500">Date</p><p className="mt-1 text-sm text-gray-900">{formatDate(selectedClass.date ?? undefined)}</p></div>
+                <div><p className="text-xs uppercase tracking-wide text-gray-500">Duration (min)</p><p className="mt-1 text-sm text-gray-900">{selectedClass.duration}</p></div>
               </div>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-gray-500">Date</p>
-                  <p className="mt-1 text-sm text-gray-900">{formatDate(selectedClass.date ?? undefined)}</p>
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-gray-500">Duration (min)</p>
-                  <p className="mt-1 text-sm text-gray-900">{selectedClass.duration}</p>
-                </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><p className="text-xs uppercase tracking-wide text-gray-500">Capacity</p><p className="mt-1 text-sm text-gray-900">{selectedClass.capacity}</p></div>
+                <div><p className="text-xs uppercase tracking-wide text-gray-500">Enrolled</p><p className="mt-1 text-sm text-gray-900">{selectedClass.enrolled}</p></div>
               </div>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-gray-500">Capacity</p>
-                  <p className="mt-1 text-sm text-gray-900">{selectedClass.capacity}</p>
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-gray-500">Enrolled</p>
-                  <p className="mt-1 text-sm text-gray-900">{selectedClass.enrolled}</p>
-                </div>
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-wide text-gray-500">Status</p>
-                <span
-                  className={`mt-1 inline-flex w-fit items-center rounded-full px-3 py-1 text-xs font-medium ${
-                    selectedClass.status === "completed"
-                      ? "bg-gray-100 text-gray-800"
-                      : selectedClass.status === "inactive"
-                      ? "bg-red-100 text-red-700"
-                      : "bg-blue-100 text-blue-800"
-                  }`}
-                >
-                  {selectedClass.status}
-                </span>
+              <div><p className="text-xs uppercase tracking-wide text-gray-500">Status</p>
+                <span className={`mt-1 inline-flex w-fit items-center rounded-full px-3 py-1 text-xs font-medium ${selectedClass.status === "completed" ? "bg-gray-100 text-gray-800" : selectedClass.status === "inactive" ? "bg-red-100 text-red-700" : "bg-blue-100 text-blue-800"}`}>{selectedClass.status}</span>
               </div>
             </div>
+            <div className="flex justify-end border-t border-gray-200 px-6 py-4"><Button type="button" variant="outline" onClick={() => setSelectedClass(null)}>Close</Button></div>
+          </div>
+        </div>
+      )}
 
-            <div className="flex justify-end border-t border-gray-200 px-6 py-4">
-              <Button type="button" variant="outline" onClick={() => setSelectedClass(null)}>
-                Close
+      {/* Edit Modal */}
+      {editingClass && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" role="dialog" aria-modal="true" onClick={() => !editSaving && setEditingClass(null)}>
+          <div className="w-full max-w-lg rounded-lg bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+              <h2 className="text-lg font-semibold text-gray-900">Edit Live Class</h2>
+              <button type="button" className="rounded-full p-1 hover:bg-gray-100" onClick={() => !editSaving && setEditingClass(null)}><X className="h-5 w-5 text-gray-500" /></button>
+            </div>
+            <div className="space-y-4 px-6 py-5">
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Title</label>
+                <Input className="mt-1" value={editForm.title ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))} disabled={editSaving} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Duration (min)</label>
+                  <Input className="mt-1" type="number" value={editForm.duration ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, duration: Number(e.target.value) }))} disabled={editSaving} />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Capacity</label>
+                  <Input className="mt-1" type="number" value={editForm.capacity ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, capacity: Number(e.target.value) }))} disabled={editSaving} />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Subject (comma-separated)</label>
+                <Input className="mt-1" value={(editForm.subjectList ?? []).join(", ")} onChange={(e) => setEditForm((f) => ({ ...f, subjectList: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) }))} disabled={editSaving} />
+              </div>
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Class Timing</label>
+                <Input className="mt-1" type="datetime-local" value={editForm.date ? new Date(editForm.date).toISOString().slice(0, 16) : ""} onChange={(e) => setEditForm((f) => ({ ...f, date: e.target.value }))} disabled={editSaving} />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 border-t border-gray-200 px-6 py-4">
+              <Button type="button" variant="outline" onClick={() => setEditingClass(null)} disabled={editSaving}>Cancel</Button>
+              <Button type="button" className="bg-[#AD49E1] text-white hover:bg-[#932ccc]" onClick={handleEditSave} disabled={editSaving}>
+                {editSaving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving…</> : "Save Changes"}
               </Button>
             </div>
           </div>
         </div>
       )}
 
-      <Pagination
-        currentPage={pagination?.currentPage ?? page}
-        totalPages={pagination?.totalPages ?? 1}
-        onPageChange={handlePageChange}
-        isLoading={isLoading}
-      />
-
-      {pagination && (
-        <p className="mt-3 text-sm text-gray-500">
-          Showing {filteredClasses.length} of {pagination.totalLiveClasses} live
-          classes
-        </p>
+      {/* Delete Confirmation */}
+      {deletingClass && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" role="dialog" aria-modal="true" onClick={() => !deleteConfirming && setDeletingClass(null)}>
+          <div className="w-full max-w-md rounded-lg bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 border-b border-gray-200 px-6 py-4">
+              <AlertTriangle className="h-5 w-5 text-red-500" />
+              <h2 className="text-lg font-semibold text-gray-900">Delete Live Class</h2>
+            </div>
+            <div className="px-6 py-5">
+              <p className="text-sm text-gray-700">Are you sure you want to permanently delete <strong>{deletingClass.title}</strong>? This action cannot be undone.</p>
+            </div>
+            <div className="flex justify-end gap-3 border-t border-gray-200 px-6 py-4">
+              <Button type="button" variant="outline" onClick={() => setDeletingClass(null)} disabled={deleteConfirming}>Cancel</Button>
+              <Button type="button" className="bg-red-600 text-white hover:bg-red-700" onClick={handleDeleteConfirm} disabled={deleteConfirming}>
+                {deleteConfirming ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Deleting…</> : "Delete Live Class"}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

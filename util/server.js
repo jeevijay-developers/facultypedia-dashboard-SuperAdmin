@@ -467,6 +467,21 @@ export const updateEducatorStatus = async (educatorId, status) => {
   return response?.data ?? response;
 };
 
+export const updateEducator = async (educatorId, data) => {
+  if (!educatorId) {
+    throw new Error("Educator ID is required");
+  }
+
+  await ensureAdminSession();
+
+  const response = await request(`/api/admin/educators/${educatorId}`, {
+    method: "PUT",
+    body: data,
+  });
+
+  return response?.data ?? response;
+};
+
 export const deleteEducator = async (educatorId) => {
   if (!educatorId) {
     throw new Error("Educator ID is required");
@@ -499,6 +514,21 @@ export const updateStudentStatus = async (studentId, isActive) => {
   return response?.data ?? response;
 };
 
+export const updateStudent = async (studentId, data) => {
+  if (!studentId) {
+    throw new Error("Student ID is required");
+  }
+
+  await ensureAdminSession();
+
+  const response = await request(`/api/admin/students/${studentId}`, {
+    method: "PUT",
+    body: data,
+  });
+
+  return response?.data ?? response;
+};
+
 export const deleteStudent = async (studentId) => {
   if (!studentId) {
     throw new Error("Student ID is required");
@@ -515,6 +545,36 @@ export const fetchCourses = async (params) => {
   await ensureAdminSession();
 
   const response = await request("/api/admin/courses", { params });
+  return response?.data ?? response;
+};
+
+export const updateCourse = async (courseId, data) => {
+  if (!courseId) {
+    throw new Error("Course ID is required");
+  }
+
+  await ensureAdminSession();
+
+  const response = await request(`/api/admin/courses/${courseId}`, {
+    method: "PUT",
+    body: data,
+  });
+
+  return response?.data ?? response;
+};
+
+export const updateCourseStatus = async (courseId, status) => {
+  if (!courseId) {
+    throw new Error("Course ID is required");
+  }
+
+  await ensureAdminSession();
+
+  const response = await request(`/api/admin/courses/${courseId}/status`, {
+    method: "PUT",
+    body: { status },
+  });
+
   return response?.data ?? response;
 };
 
@@ -537,6 +597,36 @@ export const fetchWebinars = async (params) => {
   return response?.data ?? response;
 };
 
+export const updateWebinar = async (webinarId, data) => {
+  if (!webinarId) {
+    throw new Error("Webinar ID is required");
+  }
+
+  await ensureAdminSession();
+
+  const response = await request(`/api/admin/webinars/${webinarId}`, {
+    method: "PUT",
+    body: data,
+  });
+
+  return response?.data ?? response;
+};
+
+export const updateWebinarStatus = async (webinarId, status) => {
+  if (!webinarId) {
+    throw new Error("Webinar ID is required");
+  }
+
+  await ensureAdminSession();
+
+  const response = await request(`/api/admin/webinars/${webinarId}/status`, {
+    method: "PUT",
+    body: { status },
+  });
+
+  return response?.data ?? response;
+};
+
 export const deleteWebinar = async (webinarId) => {
   if (!webinarId) {
     throw new Error("Webinar ID is required");
@@ -556,6 +646,50 @@ export const fetchTests = async (params) => {
   return response?.data ?? response;
 };
 
+export const updateTest = async (testId, data) => {
+  if (!testId) {
+    throw new Error("Test ID is required");
+  }
+
+  await ensureAdminSession();
+
+  const response = await request(`/api/admin/tests/${testId}`, {
+    method: "PUT",
+    body: data,
+  });
+
+  return response?.data ?? response;
+};
+
+export const updateTestStatus = async (testId, status) => {
+  if (!testId) {
+    throw new Error("Test ID is required");
+  }
+
+  await ensureAdminSession();
+
+  const response = await request(`/api/admin/tests/${testId}/status`, {
+    method: "PUT",
+    body: { status },
+  });
+
+  return response?.data ?? response;
+};
+
+export const deleteTest = async (testId) => {
+  if (!testId) {
+    throw new Error("Test ID is required");
+  }
+
+  await ensureAdminSession();
+
+  const response = await request(`/api/admin/tests/${testId}`, {
+    method: "DELETE",
+  });
+
+  return response?.data ?? response;
+};
+
 export const fetchTestById = async (testId) => {
   if (!testId) {
     throw new Error("Test ID is required");
@@ -572,6 +706,53 @@ export const fetchTestSeries = async (params) => {
   await ensureAdminSession();
 
   const response = await request("/api/admin/test-series", { params });
+  return response?.data ?? response;
+};
+
+export const updateTestSeries = async (testSeriesId, data) => {
+  if (!testSeriesId) {
+    throw new Error("Test series ID is required");
+  }
+
+  await ensureAdminSession();
+
+  const response = await request(`/api/admin/test-series/${testSeriesId}`, {
+    method: "PUT",
+    body: data,
+  });
+
+  return response?.data ?? response;
+};
+
+export const updateTestSeriesStatus = async (testSeriesId, status) => {
+  if (!testSeriesId) {
+    throw new Error("Test series ID is required");
+  }
+
+  await ensureAdminSession();
+
+  const response = await request(
+    `/api/admin/test-series/${testSeriesId}/status`,
+    {
+      method: "PUT",
+      body: { status },
+    }
+  );
+
+  return response?.data ?? response;
+};
+
+export const deleteTestSeries = async (testSeriesId) => {
+  if (!testSeriesId) {
+    throw new Error("Test series ID is required");
+  }
+
+  await ensureAdminSession();
+
+  const response = await request(`/api/admin/test-series/${testSeriesId}`, {
+    method: "DELETE",
+  });
+
   return response?.data ?? response;
 };
 
@@ -609,12 +790,45 @@ export const fetchLiveClassById = async (liveClassId) => {
   return response?.data ?? response;
 };
 
+export const updateLiveClass = async (liveClassId, data) => {
+  if (!liveClassId) {
+    throw new Error("Live class ID is required");
+  }
+
+  await ensureAdminSession();
+
+  const response = await request(`/api/admin/live-classes/${liveClassId}`, {
+    method: "PUT",
+    body: data,
+  });
+
+  return response?.data ?? response;
+};
+
+export const updateLiveClassStatus = async (liveClassId, status) => {
+  if (!liveClassId) {
+    throw new Error("Live class ID is required");
+  }
+
+  await ensureAdminSession();
+
+  const response = await request(
+    `/api/admin/live-classes/${liveClassId}/status`,
+    {
+      method: "PUT",
+      body: { status },
+    }
+  );
+
+  return response?.data ?? response;
+};
+
 export const deleteLiveClass = async (liveClassId) => {
   if (!liveClassId) {
     throw new Error("Live class ID is required");
   }
 
-  const response = await request(`/api/live-classes/${liveClassId}`, {
+  const response = await request(`/api/admin/live-classes/${liveClassId}`, {
     method: "DELETE",
   });
 
@@ -871,36 +1085,50 @@ const adminAPI = {
   educators: {
     list: fetchEducators,
     getById: fetchEducatorById,
+    update: updateEducator,
     updateStatus: updateEducatorStatus,
     remove: deleteEducator,
   },
   students: {
     list: fetchStudents,
     getById: fetchStudentById,
+    update: updateStudent,
     updateStatus: updateStudentStatus,
     remove: deleteStudent,
   },
   courses: {
     list: fetchCourses,
     getById: fetchCourseById,
+    update: updateCourse,
+    updateStatus: updateCourseStatus,
     remove: deleteCourse,
   },
   webinars: {
     list: fetchWebinars,
     getById: fetchWebinarById,
+    update: updateWebinar,
+    updateStatus: updateWebinarStatus,
     remove: deleteWebinar,
   },
   tests: {
     list: fetchTests,
     getById: fetchTestById,
+    update: updateTest,
+    updateStatus: updateTestStatus,
+    remove: deleteTest,
   },
   testSeries: {
     list: fetchTestSeries,
     getById: fetchTestSeriesById,
+    update: updateTestSeries,
+    updateStatus: updateTestSeriesStatus,
+    remove: deleteTestSeries,
   },
   liveClasses: {
     list: fetchLiveClasses,
     getById: fetchLiveClassById,
+    update: updateLiveClass,
+    updateStatus: updateLiveClassStatus,
     remove: deleteLiveClass,
   },
   payments: {

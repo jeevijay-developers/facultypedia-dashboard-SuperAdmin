@@ -5,7 +5,7 @@ import { DataTable } from "@/components/admin/data-table";
 import { Pagination } from "@/components/admin/pagination";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Eye, MoreHorizontal, RefreshCw, X, Send, Loader2 } from "lucide-react";
+import { Eye, Pencil, Trash2, RefreshCw, X, Send, Loader2, AlertTriangle } from "lucide-react";
 import adminAPI from "@/util/server";
 import { io, Socket } from "socket.io-client";
 import { getAdminAccessToken } from "@/util/server";
@@ -78,16 +78,16 @@ export default function EducatorsPage() {
   const [pagination, setPagination] = useState<PaginationMeta | null>(null);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
-  const [selectedEducator, setSelectedEducator] =
-    useState<TableEducator | null>(null);
+  const [selectedEducator, setSelectedEducator] = useState<TableEducator | null>(null);
+  const [editingEducator, setEditingEducator] = useState<TableEducator | null>(null);
+  const [editForm, setEditForm] = useState<Partial<TableEducator>>({});
+  const [editSaving, setEditSaving] = useState(false);
+  const [deletingEducator, setDeletingEducator] = useState<TableEducator | null>(null);
+  const [deleteConfirming, setDeleteConfirming] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const [chatConversations, setChatConversations] = useState<Conversation[]>(
-    []
-  );
-  const [selectedConversationId, setSelectedConversationId] = useState<
-    string | null
-  >(null);
+  const [chatConversations, setChatConversations] = useState<Conversation[]>([]);
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
@@ -99,17 +99,14 @@ export default function EducatorsPage() {
   const [ratingFilter, setRatingFilter] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [statusUpdating, setStatusUpdating] = useState<Record<string, boolean>>(
-    {}
-  );
+  const [statusUpdating, setStatusUpdating] = useState<Record<string, boolean>>({});
+  const [cascadeStatus, setCascadeStatus] = useState<string>("");
   const PAGE_SIZE = 10;
 
   const normalizeEducator = useCallback(
     (educator: any): TableEducator | null => {
       const id = educator?.id ?? educator?._id;
-      if (!id) {
-        return null;
-      }
+      if (!id) return null;
 
       const specializationList = Array.isArray(educator?.specialization)
         ? educator.specialization.filter(Boolean)
@@ -163,7 +160,6 @@ export default function EducatorsPage() {
     async (targetPage = page) => {
       setIsLoading(true);
       setError(null);
-
       try {
         const response = await adminAPI.educators.list({
           page: targetPage,
@@ -175,16 +171,12 @@ export default function EducatorsPage() {
               .map(normalizeEducator)
               .filter((item): item is TableEducator => Boolean(item))
           : [];
-
         setEducators(mapped);
         setPagination(response?.pagination ?? null);
       } catch (err) {
-        // 401 errors are handled globally by AuthGuard
         const status = (err as { status?: number })?.status;
         if (status !== 401) {
-          const message =
-            err instanceof Error ? err.message : "Failed to load educators";
-          setError(message);
+          setError(err instanceof Error ? err.message : "Failed to load educators");
         }
       } finally {
         setIsLoading(false);
@@ -199,58 +191,133 @@ export default function EducatorsPage() {
 
   const toggleEducatorStatus = useCallback(async (row: TableEducator) => {
     const nextStatus = row.status === "active" ? "inactive" : "active";
-
     setStatusUpdating((prev) => ({ ...prev, [row.id]: true }));
     setEducators((prev) =>
-      prev.map((edu) =>
-        edu.id === row.id ? { ...edu, status: nextStatus } : edu
-      )
+      prev.map((edu) => (edu.id === row.id ? { ...edu, status: nextStatus } : edu))
     );
 
     try {
       await adminAPI.educators.updateStatus(row.id, nextStatus);
+
+      if (nextStatus === "inactive") {
+        setCascadeStatus("Deactivating educator's content…");
+        const settle = (p: Promise<any>) => p.catch(() => null);
+        const [coursesRes, testsRes, testSeriesRes, webinarsRes, liveClassesRes] =
+          await Promise.all([
+            settle(adminAPI.courses.list({ educatorId: row.id, limit: 200 })),
+            settle(adminAPI.tests.list({ educatorId: row.id, limit: 200 })),
+            settle(adminAPI.testSeries.list({ educatorId: row.id, limit: 200 })),
+            settle(adminAPI.webinars.list({ educatorId: row.id, limit: 200 })),
+            settle(adminAPI.liveClasses.list({ educatorId: row.id, limit: 200 })),
+          ]);
+
+        const extractIds = (res: any, keys: string[]) => {
+          for (const key of keys) {
+            const arr = res?.[key] ?? res?.data?.[key];
+            if (Array.isArray(arr)) return arr.map((x: any) => x?._id ?? x?.id).filter(Boolean);
+          }
+          return [];
+        };
+
+        const courseIds = extractIds(coursesRes, ["courses"]);
+        const testIds = extractIds(testsRes, ["tests"]);
+        const seriesIds = extractIds(testSeriesRes, ["testSeries"]);
+        const webinarIds = extractIds(webinarsRes, ["webinars"]);
+        const liveClassIds = extractIds(liveClassesRes, ["liveClasses"]);
+
+        await Promise.all([
+          ...courseIds.map((id: string) => settle(adminAPI.courses.updateStatus(id, "inactive"))),
+          ...testIds.map((id: string) => settle(adminAPI.tests.updateStatus(id, "inactive"))),
+          ...seriesIds.map((id: string) => settle(adminAPI.testSeries.updateStatus(id, "inactive"))),
+          ...webinarIds.map((id: string) => settle(adminAPI.webinars.updateStatus(id, "inactive"))),
+          ...liveClassIds.map((id: string) => settle(adminAPI.liveClasses.updateStatus(id, "inactive"))),
+        ]);
+
+        setCascadeStatus("");
+      }
     } catch (err) {
       setEducators((prev) =>
-        prev.map((edu) =>
-          edu.id === row.id ? { ...edu, status: row.status } : edu
-        )
+        prev.map((edu) => (edu.id === row.id ? { ...edu, status: row.status } : edu))
       );
-
-      const message =
-        err instanceof Error ? err.message : "Failed to update educator status";
-      setError(message);
+      setError(err instanceof Error ? err.message : "Failed to update educator status");
+      setCascadeStatus("");
     } finally {
       setStatusUpdating((prev) => ({ ...prev, [row.id]: false }));
     }
   }, []);
 
+  const openEditModal = (row: TableEducator) => {
+    setEditingEducator(row);
+    setEditForm({ ...row });
+  };
+
+  const handleEditSave = async () => {
+    if (!editingEducator) return;
+    setEditSaving(true);
+    try {
+      await adminAPI.educators.update(editingEducator.id, {
+        fullName: editForm.name,
+        email: editForm.email,
+        username: editForm.username,
+        specialization: editForm.specializationList,
+      });
+      setEducators((prev) =>
+        prev.map((edu) =>
+          edu.id === editingEducator.id
+            ? {
+                ...edu,
+                name: editForm.name ?? edu.name,
+                email: editForm.email ?? edu.email,
+                username: editForm.username ?? edu.username,
+                specializationList: editForm.specializationList ?? edu.specializationList,
+                specialization: (editForm.specializationList ?? edu.specializationList).join(", ") || "—",
+              }
+            : edu
+        )
+      );
+      setEditingEducator(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update educator");
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deletingEducator) return;
+    setDeleteConfirming(true);
+    try {
+      await adminAPI.educators.remove(deletingEducator.id);
+      setEducators((prev) => prev.filter((edu) => edu.id !== deletingEducator.id));
+      setDeletingEducator(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete educator");
+    } finally {
+      setDeleteConfirming(false);
+    }
+  };
+
   const specializationOptions = useMemo(() => {
     const unique = new Set<string>();
-    educators.forEach((edu) =>
-      edu.specializationList.forEach((spec) => unique.add(spec))
-    );
+    educators.forEach((edu) => edu.specializationList.forEach((spec) => unique.add(spec)));
     return Array.from(unique);
   }, [educators]);
 
   const filteredEducators = useMemo(() => {
     const query = search.trim().toLowerCase();
-
     return educators.filter((edu) => {
       const matchesSearch = query
         ? [edu.name, edu.email, edu.username, edu.specialization]
             .filter(Boolean)
             .some((value) => value.toLowerCase().includes(query))
         : true;
-
       const matchesSpecialization = specializationFilter
         ? edu.specializationList.some(
             (s) => s.toLowerCase() === specializationFilter.toLowerCase()
           )
         : true;
-
       const minRating = ratingFilter ? Number(ratingFilter) : null;
       const matchesRating = minRating !== null ? edu.rating >= minRating : true;
-
       return matchesSearch && matchesSpecialization && matchesRating;
     });
   }, [educators, search, specializationFilter, ratingFilter]);
@@ -266,12 +333,10 @@ export default function EducatorsPage() {
       key: "status" as const,
       label: "Status",
       render: (status: string, row: TableEducator) => (
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <span
             className={`px-3 py-1 rounded-full text-xs font-medium ${
-              status === "active"
-                ? "bg-green-100 text-green-800"
-                : "bg-red-100 text-red-800"
+              status === "active" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
             }`}
           >
             {status}
@@ -279,10 +344,7 @@ export default function EducatorsPage() {
           <button
             type="button"
             className="rounded border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
-            onClick={(event) => {
-              event.stopPropagation();
-              void toggleEducatorStatus(row);
-            }}
+            onClick={(e) => { e.stopPropagation(); void toggleEducatorStatus(row); }}
             disabled={Boolean(statusUpdating[row.id]) || isLoading}
           >
             {row.status === "active" ? "Deactivate" : "Activate"}
@@ -292,62 +354,63 @@ export default function EducatorsPage() {
     },
     {
       key: "id" as const,
-      label: "View",
+      label: "Actions",
       render: (_value: string, row: TableEducator) => (
-        <div className="flex justify-end">
+        <div className="flex items-center justify-end gap-2">
           <button
             type="button"
-            className="flex items-center gap-2 rounded border border-gray-200 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
-            onClick={(event) => {
-              event.stopPropagation();
-              setSelectedEducator(row);
-            }}
+            className="flex items-center gap-1 rounded border border-gray-200 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+            onClick={(e) => { e.stopPropagation(); setSelectedEducator(row); }}
             aria-label="View educator"
           >
-            <Eye className="w-4 h-4" />
+            <Eye className="w-3.5 h-3.5" />
             View
+          </button>
+          <button
+            type="button"
+            className="flex items-center gap-1 rounded border border-blue-200 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50"
+            onClick={(e) => { e.stopPropagation(); openEditModal(row); }}
+            aria-label="Edit educator"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+            Edit
+          </button>
+          <button
+            type="button"
+            className="flex items-center gap-1 rounded border border-red-200 px-2 py-1 text-xs text-red-700 hover:bg-red-50"
+            onClick={(e) => { e.stopPropagation(); setDeletingEducator(row); }}
+            aria-label="Delete educator"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            Delete
           </button>
         </div>
       ),
     },
   ] as const;
 
-  const handlePageChange = (nextPage: number) => {
-    setPage(nextPage);
-  };
-
+  // ── Chat helpers ────────────────────────────────────────────────────────────
   const resolveId = (value: string | { _id?: string }) =>
     typeof value === "string" ? value : value?._id || "";
 
   const getOtherParticipant = useCallback(
-    (conversation: Conversation | undefined) => {
-      if (!conversation) return null;
-      return (
-        conversation.participants.find((p) => p.userType === "Educator") || null
-      );
-    },
+    (conversation: Conversation | undefined) =>
+      conversation?.participants.find((p) => p.userType === "Educator") || null,
     []
   );
 
-  const updateConversationUnread = useCallback(
-    (conversationId: string, unreadCount: number) => {
-      setChatConversations((prev) =>
-        prev.map((conv) =>
-          conv._id === conversationId
-            ? { ...conv, unreadCount: Math.max(unreadCount, 0) }
-            : conv
-        )
-      );
-    },
-    []
-  );
+  const updateConversationUnread = useCallback((conversationId: string, count: number) => {
+    setChatConversations((prev) =>
+      prev.map((conv) =>
+        conv._id === conversationId ? { ...conv, unreadCount: Math.max(count, 0) } : conv
+      )
+    );
+  }, []);
 
   const incrementConversationUnread = useCallback((conversationId: string) => {
     setChatConversations((prev) =>
       prev.map((conv) =>
-        conv._id === conversationId
-          ? { ...conv, unreadCount: (conv.unreadCount || 0) + 1 }
-          : conv
+        conv._id === conversationId ? { ...conv, unreadCount: (conv.unreadCount || 0) + 1 } : conv
       )
     );
   }, []);
@@ -359,15 +422,12 @@ export default function EducatorsPage() {
       const payload = response?.data ?? response;
       const conversations = payload?.conversations ?? payload ?? [];
       setChatConversations(conversations);
-
       if (conversations.length === 0) {
         setSelectedConversationId(null);
         setChatMessages([]);
       } else if (
         selectedConversationId &&
-        !conversations.some(
-          (c: Conversation) => c._id === selectedConversationId
-        )
+        !conversations.some((c: Conversation) => c._id === selectedConversationId)
       ) {
         setSelectedConversationId(conversations[0]._id);
       } else if (!selectedConversationId) {
@@ -382,33 +442,19 @@ export default function EducatorsPage() {
 
   const loadChatMessages = useCallback(
     async (conversationId: string | null) => {
-      if (!conversationId) {
-        setChatMessages([]);
-        return;
-      }
+      if (!conversationId) { setChatMessages([]); return; }
       setChatMessagesLoading(true);
       try {
-        const response = await adminAPI.chat.listMessages(
-          conversationId,
-          1,
-          100
-        );
+        const response = await adminAPI.chat.listMessages(conversationId, 1, 100);
         const payload = response?.data ?? response;
         const messages = payload?.messages ?? payload?.data?.messages ?? [];
         setChatMessages(messages);
 
         const unreadForAdmin = messages.filter(
-          (msg: ChatMessage) =>
-            msg.receiver?.userType === "Admin" && !msg.isRead
+          (msg: ChatMessage) => msg.receiver?.userType === "Admin" && !msg.isRead
         );
-
         if (unreadForAdmin.length > 0) {
-          try {
-            await adminAPI.chat.markConversationAsRead(conversationId);
-          } catch (err) {
-            console.error("Failed to mark conversation as read", err);
-          }
-
+          try { await adminAPI.chat.markConversationAsRead(conversationId); } catch {}
           const readAt = new Date().toISOString();
           setChatMessages((prev) =>
             prev.map((msg) =>
@@ -418,7 +464,6 @@ export default function EducatorsPage() {
             )
           );
         }
-
         updateConversationUnread(conversationId, 0);
       } catch (err) {
         console.error("Failed to load chat messages", err);
@@ -430,9 +475,7 @@ export default function EducatorsPage() {
   );
 
   useEffect(() => {
-    if (isChatOpen) {
-      void loadChatConversations();
-    }
+    if (isChatOpen) void loadChatConversations();
   }, [isChatOpen, loadChatConversations]);
 
   useEffect(() => {
@@ -442,79 +485,52 @@ export default function EducatorsPage() {
 
   useEffect(() => {
     if (!isChatOpen) return;
-
     const token = getAdminAccessToken();
     if (!token) return;
-
     const baseUrl =
-      process.env.NEXT_PUBLIC_API_URL ||
-      process.env.NEXT_PUBLIC_BASE_URL ||
-      "http://localhost:5000";
-
+      process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:5000";
     const socket = io(`${baseUrl}/admin-educator-chat`, {
       transports: ["websocket"],
       auth: { token },
     });
-
     socket.on("new_message", ({ message }) => {
       if (!message) return;
-      setChatMessages((prev) =>
-        prev.some((m) => m._id === message._id) ? prev : [...prev, message]
-      );
-      setChatConversations((prev) => {
-        const updated = prev.map((c) =>
+      setChatMessages((prev) => (prev.some((m) => m._id === message._id) ? prev : [...prev, message]));
+      setChatConversations((prev) =>
+        prev.map((c) =>
           c._id === message.conversationId
             ? { ...c, lastMessage: message, lastMessageAt: message.createdAt }
             : c
-        );
-        return updated;
-      });
-
+        )
+      );
       const isActive = selectedConversationId === message.conversationId;
       const isForAdmin = message.receiver?.userType === "Admin";
-
       if (isActive && isForAdmin) {
-        void adminAPI.chat
-          .markMessageAsRead(message._id)
-          .catch((err) => console.error("Failed to mark message read", err));
-
+        void adminAPI.chat.markMessageAsRead(message._id).catch(() => {});
         setChatMessages((prev) =>
           prev.map((m) =>
-            m._id === message._id
-              ? { ...m, isRead: true, readAt: new Date().toISOString() }
-              : m
+            m._id === message._id ? { ...m, isRead: true, readAt: new Date().toISOString() } : m
           )
         );
       } else if (!isActive && isForAdmin) {
         incrementConversationUnread(message.conversationId);
       }
     });
-
     socket.on("message_sent", ({ message }) => {
       if (message?.conversationId === selectedConversationId) {
-        setChatMessages((prev) =>
-          prev.some((m) => m._id === message._id) ? prev : [...prev, message]
-        );
+        setChatMessages((prev) => (prev.some((m) => m._id === message._id) ? prev : [...prev, message]));
       }
     });
-
     socketRef.current = socket;
-
-    return () => {
-      socket.disconnect();
-      socketRef.current = null;
-    };
+    return () => { socket.disconnect(); socketRef.current = null; };
   }, [incrementConversationUnread, isChatOpen, selectedConversationId]);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [chatMessages]);
 
   const selectedConversation = useMemo(
-    () =>
-      chatConversations.find((c) => c._id === selectedConversationId) || null,
+    () => chatConversations.find((c) => c._id === selectedConversationId) || null,
     [chatConversations, selectedConversationId]
   );
 
@@ -529,7 +545,6 @@ export default function EducatorsPage() {
     if (!receiverId) return;
     const content = chatInput.trim();
     if (!content) return;
-
     setChatSending(true);
     try {
       if (socketRef.current?.connected) {
@@ -551,9 +566,7 @@ export default function EducatorsPage() {
           attachments: [],
         });
         const message = response?.message || response?.data?.message;
-        if (message) {
-          setChatMessages((prev) => [...prev, message]);
-        }
+        if (message) setChatMessages((prev) => [...prev, message]);
       }
       setChatInput("");
     } catch (err) {
@@ -565,30 +578,18 @@ export default function EducatorsPage() {
 
   const formattedTime = (value?: string) => {
     if (!value) return "";
-    return new Date(value).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   };
 
   const sortedChatMessages = useMemo(
-    () =>
-      [...chatMessages].sort(
-        (a, b) =>
-          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-      ),
+    () => [...chatMessages].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()),
     [chatMessages]
   );
 
   const resolveParticipantName = (participant: Participant | null) => {
     if (!participant) return "Educator";
     if (typeof participant.userId === "object") {
-      return (
-        participant.userId.fullName ||
-        participant.userId.email ||
-        participant.userId._id ||
-        "Educator"
-      );
+      return participant.userId.fullName || participant.userId.email || participant.userId._id || "Educator";
     }
     return participant.userId;
   };
@@ -599,10 +600,15 @@ export default function EducatorsPage() {
         <h1 className="text-3xl font-bold" style={{ color: "#2E073F" }}>
           Educators Management
         </h1>
-        <p className="text-gray-600 mt-1">
-          Manage and monitor all educators on the platform
-        </p>
+        <p className="text-gray-600 mt-1">Manage and monitor all educators on the platform</p>
       </div>
+
+      {cascadeStatus && (
+        <div className="mb-4 flex items-center gap-2 rounded-md border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          {cascadeStatus}
+        </div>
+      )}
 
       <div className="mb-6 flex gap-4">
         <div className="flex-1">
@@ -633,9 +639,7 @@ export default function EducatorsPage() {
             <div className="absolute right-28 top-12 z-20 w-72 rounded-md border border-gray-200 bg-white p-4 shadow-lg">
               <div className="space-y-3">
                 <div>
-                  <p className="text-xs font-semibold text-gray-600">
-                    Specialization
-                  </p>
+                  <p className="text-xs font-semibold text-gray-600">Specialization</p>
                   <select
                     className="mt-1 w-full rounded-md border border-gray-200 p-2 text-sm"
                     value={specializationFilter}
@@ -643,16 +647,12 @@ export default function EducatorsPage() {
                   >
                     <option value="">All</option>
                     {specializationOptions.map((spec) => (
-                      <option key={spec} value={spec}>
-                        {spec}
-                      </option>
+                      <option key={spec} value={spec}>{spec}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <p className="text-xs font-semibold text-gray-600">
-                    Min Rating
-                  </p>
+                  <p className="text-xs font-semibold text-gray-600">Min Rating</p>
                   <select
                     className="mt-1 w-full rounded-md border border-gray-200 p-2 text-sm"
                     value={ratingFilter}
@@ -666,22 +666,10 @@ export default function EducatorsPage() {
                   </select>
                 </div>
                 <div className="flex justify-end gap-2">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setSpecializationFilter("");
-                      setRatingFilter("");
-                    }}
-                  >
+                  <Button type="button" variant="ghost" size="sm" onClick={() => { setSpecializationFilter(""); setRatingFilter(""); }}>
                     Clear
                   </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => setShowFilters(false)}
-                  >
+                  <Button type="button" size="sm" onClick={() => setShowFilters(false)}>
                     Apply
                   </Button>
                 </div>
@@ -692,17 +680,12 @@ export default function EducatorsPage() {
             type="button"
             variant="outline"
             className="flex items-center gap-2"
-            onClick={() => {
-              void loadEducators(page);
-            }}
+            onClick={() => void loadEducators(page)}
             disabled={isLoading}
           >
-            <RefreshCw
-              className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
-            />
+            <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
             Refresh
           </Button>
-          {/* <Button style={{ backgroundColor: "#AD49E1", color: "white" }}>Add Educator</Button> */}
         </div>
       </div>
 
@@ -717,27 +700,23 @@ export default function EducatorsPage() {
       <Pagination
         currentPage={pagination?.currentPage ?? page}
         totalPages={pagination?.totalPages ?? 1}
-        onPageChange={handlePageChange}
+        onPageChange={(p) => setPage(p)}
         isLoading={isLoading}
       />
 
       {pagination && (
         <div className="mb-4 text-sm text-gray-600">
-          Showing {filteredEducators.length} of {pagination.totalEducators}{" "}
-          educators
+          Showing {filteredEducators.length} of {pagination.totalEducators} educators
         </div>
       )}
 
       {!isLoading && !error && filteredEducators.length === 0 && (
-        <div className="mt-4 text-sm text-gray-500">
-          No educators match the current filters.
-        </div>
+        <div className="mt-4 text-sm text-gray-500">No educators match the current filters.</div>
       )}
 
-      {isLoading && (
-        <div className="mt-4 text-sm text-gray-500">Loading educators…</div>
-      )}
+      {isLoading && <div className="mt-4 text-sm text-gray-500">Loading educators…</div>}
 
+      {/* ── View Modal ─────────────────────────────────────────────────────────── */}
       {selectedEducator && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
@@ -747,120 +726,191 @@ export default function EducatorsPage() {
         >
           <div
             className="w-full max-w-lg rounded-lg bg-white shadow-2xl"
-            onClick={(event) => event.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-              <h2 className="text-lg font-semibold text-gray-900">
-                Educator Details
-              </h2>
-              <button
-                type="button"
-                className="rounded-full p-1 hover:bg-gray-100"
-                onClick={() => setSelectedEducator(null)}
-                aria-label="Close details"
-              >
+              <h2 className="text-lg font-semibold text-gray-900">Educator Details</h2>
+              <button type="button" className="rounded-full p-1 hover:bg-gray-100" onClick={() => setSelectedEducator(null)}>
                 <X className="h-5 w-5 text-gray-500" />
               </button>
             </div>
-
             <div className="space-y-4 px-6 py-5 text-sm text-gray-700">
               <div>
-                <p className="text-xs uppercase tracking-wide text-gray-500">
-                  Name
-                </p>
-                <p className="mt-1 text-base font-medium text-gray-900">
-                  {selectedEducator.name}
-                </p>
+                <p className="text-xs uppercase tracking-wide text-gray-500">Name</p>
+                <p className="mt-1 text-base font-medium text-gray-900">{selectedEducator.name}</p>
               </div>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-xs uppercase tracking-wide text-gray-500">
-                    Email
-                  </p>
-                  <p className="mt-1 break-all text-sm text-gray-900">
-                    {selectedEducator.email}
-                  </p>
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Email</p>
+                  <p className="mt-1 break-all text-sm text-gray-900">{selectedEducator.email}</p>
                 </div>
                 <div>
-                  <p className="text-xs uppercase tracking-wide text-gray-500">
-                    Username
-                  </p>
-                  <p className="mt-1 text-sm text-gray-900">
-                    {selectedEducator.username}
-                  </p>
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Username</p>
+                  <p className="mt-1 text-sm text-gray-900">{selectedEducator.username}</p>
                 </div>
               </div>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-xs uppercase tracking-wide text-gray-500">
-                    Specialization
-                  </p>
-                  <p className="mt-1 text-sm text-gray-900">
-                    {selectedEducator.specialization}
-                  </p>
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Specialization</p>
+                  <p className="mt-1 text-sm text-gray-900">{selectedEducator.specialization}</p>
                 </div>
                 <div>
-                  <p className="text-xs uppercase tracking-wide text-gray-500">
-                    Status
-                  </p>
-                  <span
-                    className={`mt-1 inline-flex w-fit items-center rounded-full px-3 py-1 text-xs font-medium ${
-                      selectedEducator.status === "active"
-                        ? "bg-green-100 text-green-700"
-                        : "bg-red-100 text-red-700"
-                    }`}
-                  >
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Status</p>
+                  <span className={`mt-1 inline-flex w-fit items-center rounded-full px-3 py-1 text-xs font-medium ${selectedEducator.status === "active" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
                     {selectedEducator.status}
                   </span>
                 </div>
               </div>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-xs uppercase tracking-wide text-gray-500">
-                    Total Courses
-                  </p>
-                  <p className="mt-1 text-sm text-gray-900">
-                    {selectedEducator.totalCourses}
-                  </p>
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Total Courses</p>
+                  <p className="mt-1 text-sm text-gray-900">{selectedEducator.totalCourses}</p>
                 </div>
                 <div>
-                  <p className="text-xs uppercase tracking-wide text-gray-500">
-                    Total Followers
-                  </p>
-                  <p className="mt-1 text-sm text-gray-900">
-                    {selectedEducator.totalStudents}
-                  </p>
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Total Followers</p>
+                  <p className="mt-1 text-sm text-gray-900">{selectedEducator.totalStudents}</p>
                 </div>
               </div>
               <div>
-                <p className="text-xs uppercase tracking-wide text-gray-500">
-                  Rating
-                </p>
-                <p className="mt-1 text-sm text-gray-900">
-                  {selectedEducator.rating}
-                </p>
-                {selectedEducator.followersCount >
-                  selectedEducator.totalStudents && (
-                  <p className="mt-1 text-xs text-gray-500">
-                    Followers: {selectedEducator.followersCount}
-                  </p>
-                )}
+                <p className="text-xs uppercase tracking-wide text-gray-500">Rating</p>
+                <p className="mt-1 text-sm text-gray-900">{selectedEducator.rating}</p>
               </div>
             </div>
-
             <div className="flex justify-end border-t border-gray-200 px-6 py-4">
+              <Button type="button" variant="outline" onClick={() => setSelectedEducator(null)}>Close</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit Modal ─────────────────────────────────────────────────────────── */}
+      {editingEducator && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => !editSaving && setEditingEducator(null)}
+        >
+          <div
+            className="w-full max-w-lg rounded-lg bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+              <h2 className="text-lg font-semibold text-gray-900">Edit Educator</h2>
+              <button type="button" className="rounded-full p-1 hover:bg-gray-100" onClick={() => !editSaving && setEditingEducator(null)}>
+                <X className="h-5 w-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="space-y-4 px-6 py-5">
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Full Name</label>
+                <Input
+                  className="mt-1"
+                  value={editForm.name ?? ""}
+                  onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+                  disabled={editSaving}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Email</label>
+                  <Input
+                    className="mt-1"
+                    value={editForm.email ?? ""}
+                    onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))}
+                    disabled={editSaving}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Username</label>
+                  <Input
+                    className="mt-1"
+                    value={editForm.username ?? ""}
+                    onChange={(e) => setEditForm((f) => ({ ...f, username: e.target.value }))}
+                    disabled={editSaving}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Specialization (comma-separated)
+                </label>
+                <Input
+                  className="mt-1"
+                  value={(editForm.specializationList ?? []).join(", ")}
+                  onChange={(e) =>
+                    setEditForm((f) => ({
+                      ...f,
+                      specializationList: e.target.value
+                        .split(",")
+                        .map((s) => s.trim())
+                        .filter(Boolean),
+                    }))
+                  }
+                  disabled={editSaving}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 border-t border-gray-200 px-6 py-4">
+              <Button type="button" variant="outline" onClick={() => setEditingEducator(null)} disabled={editSaving}>
+                Cancel
+              </Button>
               <Button
                 type="button"
-                variant="outline"
-                onClick={() => setSelectedEducator(null)}
+                className="bg-[#AD49E1] text-white hover:bg-[#932ccc]"
+                onClick={handleEditSave}
+                disabled={editSaving}
               >
-                Close
+                {editSaving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving…</> : "Save Changes"}
               </Button>
             </div>
           </div>
         </div>
       )}
 
+      {/* ── Delete Confirmation Modal ────────────────────────────────────────── */}
+      {deletingEducator && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => !deleteConfirming && setDeletingEducator(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-lg bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 border-b border-gray-200 px-6 py-4">
+              <AlertTriangle className="h-5 w-5 text-red-500" />
+              <h2 className="text-lg font-semibold text-gray-900">Delete Educator</h2>
+            </div>
+            <div className="px-6 py-5 space-y-3">
+              <p className="text-sm text-gray-700">
+                Are you sure you want to delete <strong>{deletingEducator.name}</strong>?
+              </p>
+              <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <strong>Warning:</strong> This will permanently delete the educator and may also remove all their
+                courses, tests, test series, webinars, and live classes from the platform.
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 border-t border-gray-200 px-6 py-4">
+              <Button type="button" variant="outline" onClick={() => setDeletingEducator(null)} disabled={deleteConfirming}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className="bg-red-600 text-white hover:bg-red-700"
+                onClick={handleDeleteConfirm}
+                disabled={deleteConfirming}
+              >
+                {deleteConfirming ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Deleting…</> : "Delete Educator"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Chat Modal ─────────────────────────────────────────────────────────── */}
       {isChatOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
@@ -870,31 +920,20 @@ export default function EducatorsPage() {
         >
           <div
             className="flex h-162.5 w-full max-w-6xl overflow-hidden rounded-3xl bg-white shadow-2xl"
-            onClick={(event) => event.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
           >
-            {/* Sidebar */}
             <aside className="w-70 shrink-0 border-r border-gray-100 bg-white flex flex-col">
               <div className="px-6 pb-3 pt-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h2 className="text-lg font-semibold text-gray-900">
-                      Educators
-                    </h2>
-                    <p className="text-xs text-gray-500">
-                      Recent conversations
-                    </p>
+                    <h2 className="text-lg font-semibold text-gray-900">Educators</h2>
+                    <p className="text-xs text-gray-500">Recent conversations</p>
                   </div>
-                  <button
-                    type="button"
-                    className="text-gray-400 hover:text-gray-600"
-                    aria-label="Close chat"
-                    onClick={() => setIsChatOpen(false)}
-                  >
+                  <button type="button" className="text-gray-400 hover:text-gray-600" onClick={() => setIsChatOpen(false)}>
                     <X className="h-5 w-5" />
                   </button>
                 </div>
               </div>
-
               <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-2">
                 {chatLoading ? (
                   <div className="flex h-full items-center justify-center text-sm text-gray-500">
@@ -908,27 +947,15 @@ export default function EducatorsPage() {
                   chatConversations.map((conversation) => {
                     const partner = getOtherParticipant(conversation);
                     const name = resolveParticipantName(partner);
-                    const isActive =
-                      selectedConversationId === conversation._id;
+                    const isActive = selectedConversationId === conversation._id;
                     const lastText = conversation.lastMessage?.content || "";
-                    const timeLabel = formattedTime(
-                      conversation.lastMessage?.createdAt ||
-                        conversation.lastMessageAt
-                    );
-
+                    const timeLabel = formattedTime(conversation.lastMessage?.createdAt || conversation.lastMessageAt);
                     return (
                       <button
                         key={conversation._id}
                         type="button"
-                        onClick={() => {
-                          updateConversationUnread(conversation._id, 0);
-                          setSelectedConversationId(conversation._id);
-                        }}
-                        className={`w-full rounded-xl border border-transparent p-3 text-left transition-colors ${
-                          isActive
-                            ? "bg-purple-50 border-purple-100"
-                            : "hover:bg-gray-50"
-                        }`}
+                        onClick={() => { updateConversationUnread(conversation._id, 0); setSelectedConversationId(conversation._id); }}
+                        className={`w-full rounded-xl border border-transparent p-3 text-left transition-colors ${isActive ? "bg-purple-50 border-purple-100" : "hover:bg-gray-50"}`}
                       >
                         <div className="flex items-start gap-3">
                           <div className="relative mt-0.5 h-10 w-10 rounded-full bg-linear-to-br from-purple-500 to-fuchsia-500 text-white flex items-center justify-center text-sm font-semibold">
@@ -936,16 +963,10 @@ export default function EducatorsPage() {
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center justify-between gap-2">
-                              <p className="truncate text-sm font-semibold text-gray-900">
-                                {name}
-                              </p>
-                              <span className="text-[11px] text-gray-400">
-                                {timeLabel}
-                              </span>
+                              <p className="truncate text-sm font-semibold text-gray-900">{name}</p>
+                              <span className="text-[11px] text-gray-400">{timeLabel}</span>
                             </div>
-                            <p className="truncate text-xs text-gray-500">
-                              {lastText}
-                            </p>
+                            <p className="truncate text-xs text-gray-500">{lastText}</p>
                             {conversation.unreadCount ? (
                               <span className="mt-1 inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-[11px] font-semibold text-purple-700">
                                 {conversation.unreadCount} new
@@ -959,103 +980,48 @@ export default function EducatorsPage() {
                 )}
               </div>
             </aside>
-
-            {/* Chat area */}
             <section className="flex min-w-0 flex-1 flex-col bg-white">
               <header className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
                 <div className="flex items-center gap-3">
                   <div className="relative h-10 w-10 rounded-full bg-linear-to-br from-purple-500 to-fuchsia-500 text-white flex items-center justify-center text-sm font-semibold">
-                    {chatPartner
-                      ? resolveParticipantName(chatPartner)
-                          .slice(0, 2)
-                          .toUpperCase()
-                      : "--"}
+                    {chatPartner ? resolveParticipantName(chatPartner).slice(0, 2).toUpperCase() : "--"}
                   </div>
                   <div>
                     <h3 className="text-base font-bold text-gray-900 leading-tight">
-                      {chatPartner
-                        ? resolveParticipantName(chatPartner)
-                        : "No conversation"}
+                      {chatPartner ? resolveParticipantName(chatPartner) : "No conversation"}
                     </h3>
-                    <p className="text-xs text-gray-500">
-                      Real-time chat with educators
-                    </p>
+                    <p className="text-xs text-gray-500">Real-time chat with educators</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-3 text-gray-400">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setIsChatOpen(false)}
-                    aria-label="Close chat"
-                  >
-                    <X className="h-5 w-5" />
-                  </Button>
-                </div>
+                <Button type="button" variant="ghost" size="icon" onClick={() => setIsChatOpen(false)}>
+                  <X className="h-5 w-5" />
+                </Button>
               </header>
-
               <div className="flex-1 bg-white p-6 pb-4">
-                <div
-                  ref={scrollRef}
-                  className="flex h-full flex-col gap-4 overflow-y-auto rounded-2xl bg-gray-50 px-4 py-4"
-                >
+                <div ref={scrollRef} className="flex h-full flex-col gap-4 overflow-y-auto rounded-2xl bg-gray-50 px-4 py-4">
                   {chatMessagesLoading ? (
                     <div className="flex h-full items-center justify-center text-sm text-gray-500">
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading
-                      messages...
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading messages...
                     </div>
                   ) : !selectedConversationId ? (
                     <div className="flex h-full items-center justify-center text-sm text-gray-500">
                       Select an educator to start chatting.
                     </div>
                   ) : sortedChatMessages.length === 0 ? (
-                    <div className="flex h-full items-center justify-center text-sm text-gray-500">
-                      No messages yet.
-                    </div>
+                    <div className="flex h-full items-center justify-center text-sm text-gray-500">No messages yet.</div>
                   ) : (
                     sortedChatMessages.map((message) => {
                       const isMine = message.sender.userType === "Admin";
-                      const bubbleColor = isMine
-                        ? "bg-gradient-to-br from-purple-600 to-fuchsia-600 text-white"
-                        : "bg-white text-gray-800 border border-gray-200";
                       return (
-                        <div
-                          key={message._id}
-                          className={`flex ${
-                            isMine ? "justify-end" : "justify-start"
-                          }`}
-                        >
-                          <div
-                            className={`max-w-[70%] rounded-2xl px-4 py-3 text-sm shadow-sm ${
-                              isMine ? "rounded-br-none" : "rounded-bl-none"
-                            } ${bubbleColor}`}
-                          >
-                            {message.messageType === "image" &&
-                            message.attachments?.[0]?.url ? (
-                              <a
-                                href={message.attachments[0].url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="mb-2 block overflow-hidden rounded-lg"
-                              >
-                                <img
-                                  src={message.attachments[0].url}
-                                  alt={
-                                    message.attachments[0].filename || "Image"
-                                  }
-                                  className="max-h-64 w-full object-cover"
-                                />
+                        <div key={message._id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
+                          <div className={`max-w-[70%] rounded-2xl px-4 py-3 text-sm shadow-sm ${isMine ? "rounded-br-none bg-gradient-to-br from-purple-600 to-fuchsia-600 text-white" : "rounded-bl-none bg-white text-gray-800 border border-gray-200"}`}>
+                            {message.messageType === "image" && message.attachments?.[0]?.url ? (
+                              <a href={message.attachments[0].url} target="_blank" rel="noreferrer" className="mb-2 block overflow-hidden rounded-lg">
+                                <img src={message.attachments[0].url} alt={message.attachments[0].filename || "Image"} className="max-h-64 w-full object-cover" />
                               </a>
                             ) : null}
-                            <p className="whitespace-pre-wrap wrap-break-word leading-relaxed">
-                              {message.content}
-                            </p>
-                            <span
-                              className={`mt-2 block text-[11px] ${
-                                isMine ? "text-white/80" : "text-gray-500"
-                              }`}
-                            >
+                            <p className="whitespace-pre-wrap wrap-break-word leading-relaxed">{message.content}</p>
+                            <span className={`mt-2 block text-[11px] ${isMine ? "text-white/80" : "text-gray-500"}`}>
                               {formattedTime(message.createdAt)}
                             </span>
                           </div>
@@ -1065,15 +1031,8 @@ export default function EducatorsPage() {
                   )}
                 </div>
               </div>
-
               <footer className="border-t border-gray-100 bg-white px-6 py-4">
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void handleSendMessage();
-                  }}
-                  className="flex items-center gap-3"
-                >
+                <form onSubmit={(e) => { e.preventDefault(); void handleSendMessage(); }} className="flex items-center gap-3">
                   <div className="flex-1">
                     <Input
                       placeholder="Type a message..."
@@ -1086,21 +1045,9 @@ export default function EducatorsPage() {
                   <Button
                     type="submit"
                     className="gap-2 rounded-full bg-purple-600 px-5 text-white hover:bg-purple-700"
-                    disabled={
-                      !selectedConversationId ||
-                      chatSending ||
-                      !chatInput.trim()
-                    }
+                    disabled={!selectedConversationId || chatSending || !chatInput.trim()}
                   >
-                    {chatSending ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" /> Sending
-                      </>
-                    ) : (
-                      <>
-                        <Send className="h-4 w-4" /> Send
-                      </>
-                    )}
+                    {chatSending ? <><Loader2 className="h-4 w-4 animate-spin" /> Sending</> : <><Send className="h-4 w-4" /> Send</>}
                   </Button>
                 </form>
               </footer>

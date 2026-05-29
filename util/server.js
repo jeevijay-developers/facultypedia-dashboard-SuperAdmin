@@ -457,6 +457,8 @@ export const updateEducatorStatus = async (educatorId, status) => {
     throw new Error("Educator ID is required");
   }
 
+  await ensureAdminSession();
+
   const response = await request(`/api/admin/educators/${educatorId}/status`, {
     method: "PUT",
     body: { status },

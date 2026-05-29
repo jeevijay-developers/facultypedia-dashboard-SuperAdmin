@@ -100,7 +100,6 @@ export default function EducatorsPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusUpdating, setStatusUpdating] = useState<Record<string, boolean>>({});
-  const [cascadeStatus, setCascadeStatus] = useState<string>("");
   const PAGE_SIZE = 10;
 
   const normalizeEducator = useCallback(
@@ -197,50 +196,15 @@ export default function EducatorsPage() {
     );
 
     try {
+      // The backend cascades to all of the educator's content (courses, tests,
+      // test series, webinars, live classes) atomically, restoring exactly what
+      // it deactivated on re-activation — no per-item frontend calls needed.
       await adminAPI.educators.updateStatus(row.id, nextStatus);
-
-      if (nextStatus === "inactive") {
-        setCascadeStatus("Deactivating educator's content…");
-        const settle = (p: Promise<any>) => p.catch(() => null);
-        const [coursesRes, testsRes, testSeriesRes, webinarsRes, liveClassesRes] =
-          await Promise.all([
-            settle(adminAPI.courses.list({ educatorId: row.id, limit: 200 })),
-            settle(adminAPI.tests.list({ educatorId: row.id, limit: 200 })),
-            settle(adminAPI.testSeries.list({ educatorId: row.id, limit: 200 })),
-            settle(adminAPI.webinars.list({ educatorId: row.id, limit: 200 })),
-            settle(adminAPI.liveClasses.list({ educatorId: row.id, limit: 200 })),
-          ]);
-
-        const extractIds = (res: any, keys: string[]) => {
-          for (const key of keys) {
-            const arr = res?.[key] ?? res?.data?.[key];
-            if (Array.isArray(arr)) return arr.map((x: any) => x?._id ?? x?.id).filter(Boolean);
-          }
-          return [];
-        };
-
-        const courseIds = extractIds(coursesRes, ["courses"]);
-        const testIds = extractIds(testsRes, ["tests"]);
-        const seriesIds = extractIds(testSeriesRes, ["testSeries"]);
-        const webinarIds = extractIds(webinarsRes, ["webinars"]);
-        const liveClassIds = extractIds(liveClassesRes, ["liveClasses"]);
-
-        await Promise.all([
-          ...courseIds.map((id: string) => settle(adminAPI.courses.updateStatus(id, "inactive"))),
-          ...testIds.map((id: string) => settle(adminAPI.tests.updateStatus(id, "inactive"))),
-          ...seriesIds.map((id: string) => settle(adminAPI.testSeries.updateStatus(id, "inactive"))),
-          ...webinarIds.map((id: string) => settle(adminAPI.webinars.updateStatus(id, "inactive"))),
-          ...liveClassIds.map((id: string) => settle(adminAPI.liveClasses.updateStatus(id, "inactive"))),
-        ]);
-
-        setCascadeStatus("");
-      }
     } catch (err) {
       setEducators((prev) =>
         prev.map((edu) => (edu.id === row.id ? { ...edu, status: row.status } : edu))
       );
       setError(err instanceof Error ? err.message : "Failed to update educator status");
-      setCascadeStatus("");
     } finally {
       setStatusUpdating((prev) => ({ ...prev, [row.id]: false }));
     }
@@ -602,13 +566,6 @@ export default function EducatorsPage() {
         </h1>
         <p className="text-gray-600 mt-1">Manage and monitor all educators on the platform</p>
       </div>
-
-      {cascadeStatus && (
-        <div className="mb-4 flex items-center gap-2 rounded-md border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          {cascadeStatus}
-        </div>
-      )}
 
       <div className="mb-6 flex gap-4">
         <div className="flex-1">

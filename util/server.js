@@ -572,7 +572,7 @@ export const updateCourseStatus = async (courseId, status) => {
 
   const response = await request(`/api/admin/courses/${courseId}/status`, {
     method: "PUT",
-    body: { status },
+    body: { isActive: status === "active" },
   });
 
   return response?.data ?? response;
@@ -621,7 +621,7 @@ export const updateWebinarStatus = async (webinarId, status) => {
 
   const response = await request(`/api/admin/webinars/${webinarId}/status`, {
     method: "PUT",
-    body: { status },
+    body: { isActive: status === "active" },
   });
 
   return response?.data ?? response;
@@ -670,7 +670,7 @@ export const updateTestStatus = async (testId, status) => {
 
   const response = await request(`/api/admin/tests/${testId}/status`, {
     method: "PUT",
-    body: { status },
+    body: { isActive: status === "active" },
   });
 
   return response?.data ?? response;
@@ -731,13 +731,10 @@ export const updateTestSeriesStatus = async (testSeriesId, status) => {
 
   await ensureAdminSession();
 
-  const response = await request(
-    `/api/admin/test-series/${testSeriesId}/status`,
-    {
-      method: "PUT",
-      body: { status },
-    }
-  );
+  const response = await request(`/api/admin/test-series/${testSeriesId}/status`, {
+    method: "PUT",
+    body: { isActive: status === "active" },
+  });
 
   return response?.data ?? response;
 };
@@ -812,13 +809,12 @@ export const updateLiveClassStatus = async (liveClassId, status) => {
 
   await ensureAdminSession();
 
-  const response = await request(
-    `/api/admin/live-classes/${liveClassId}/status`,
-    {
-      method: "PUT",
-      body: { status },
-    }
-  );
+  // Live classes are "active" when upcoming/active and "inactive" otherwise;
+  // map any non-inactive status to isActive: true.
+  const response = await request(`/api/admin/live-classes/${liveClassId}/status`, {
+    method: "PUT",
+    body: { isActive: status !== "inactive" },
+  });
 
   return response?.data ?? response;
 };

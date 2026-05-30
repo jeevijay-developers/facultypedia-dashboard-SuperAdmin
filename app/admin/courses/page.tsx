@@ -16,6 +16,7 @@ type TableCourse = {
   enrolled: number;
   fees: number;
   status: string;
+  courseType: string;
 };
 
 type PaginationMeta = {
@@ -63,6 +64,7 @@ export default function CoursesPage() {
       enrolled: Number.isFinite(Number(course?.enrolled)) ? Number(course.enrolled) : Array.isArray(course?.enrolledStudents) ? course.enrolledStudents.length : 0,
       fees: Number.isFinite(Number(course?.fees)) ? Number(course.fees) : 0,
       status: course?.status ? course.status : course?.isActive === false ? "inactive" : "active",
+      courseType: course?.courseType === "one-to-one" ? "One to One" : "One to All",
     };
   }, []);
 
@@ -179,6 +181,7 @@ export default function CoursesPage() {
 
   const columns = [
     { key: "title" as const, label: "Title", sortable: true },
+    { key: "courseType" as const, label: "Type", sortable: true },
     { key: "educatorName" as const, label: "Educator", sortable: true },
     { key: "subject" as const, label: "Subject", sortable: true },
     { key: "enrolled" as const, label: "Enrolled", sortable: true },
@@ -293,7 +296,10 @@ export default function CoursesPage() {
               <button type="button" className="rounded-full p-1 hover:bg-gray-100" onClick={() => setSelectedCourse(null)}><X className="h-5 w-5 text-gray-500" /></button>
             </div>
             <div className="space-y-4 px-6 py-5 text-sm text-gray-700">
-              <div><p className="text-xs uppercase tracking-wide text-gray-500">Title</p><p className="mt-1 text-base font-medium text-gray-900">{selectedCourse.title}</p></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><p className="text-xs uppercase tracking-wide text-gray-500">Title</p><p className="mt-1 text-base font-medium text-gray-900">{selectedCourse.title}</p></div>
+                <div><p className="text-xs uppercase tracking-wide text-gray-500">Type</p><p className="mt-1 text-base font-medium text-gray-900">{selectedCourse.courseType}</p></div>
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div><p className="text-xs uppercase tracking-wide text-gray-500">Educator</p><p className="mt-1 text-sm text-gray-900">{selectedCourse.educatorName}</p></div>
                 <div><p className="text-xs uppercase tracking-wide text-gray-500">Subject</p><p className="mt-1 text-sm text-gray-900">{selectedCourse.subject}</p></div>
